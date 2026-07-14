@@ -64,9 +64,15 @@ Draw on these for substance and framing. These are the throughlines:
 - **Nostr-native.** Short. One idea per post. No threads unless earned.
 - **No hype words** ("excited to announce", "game-changing", "🚀"). No
   emoji spam — a single, apt emoji at most, rarely.
-- **Never tag the platform you're on.** No `#nostr` on nostr — ever. It reads
-  like `#twitter` on Twitter. Hashtags are rarely worth it here at all; if one
-  genuinely aids discovery use it sparingly, but never the platform's own name.
+- **Channel-appropriate, always.** Write to the conventions of the channel a
+  post is going to — its audience, its tone, its hashtag norms. The test: use
+  the things that channel's readers expect, and skip the things they wouldn't.
+  The same tag can be right in one place and wrong in another — `#nostr` reaches
+  the nostr-curious *on Twitter/X*, but on nostr it's noise.
+- **Never tag the platform you're on.** No `#nostr` on nostr, no `#bluesky` on
+  Bluesky — it reads like `#twitter` on Twitter. On nostr specifically,
+  hashtags are rarely worth it at all; use one only when it genuinely aids
+  discovery, and never the platform's own name.
 - **Concrete over abstract.** Name the thing that shipped, link it, say why
   it matters in one line.
 - **Link when it helps**: nave.pub, the app subdomains, the Substack post,
