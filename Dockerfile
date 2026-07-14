@@ -5,6 +5,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY luke-service.mjs ./
+COPY publish-profiles.mjs ./
 ENV NODE_ENV=production
 ENV LUKE_PORT=8790
 EXPOSE 8790
