@@ -115,7 +115,9 @@ export async function handleTelegramWebhook(req, res, raw) {
   const answer = (text) => tg('answerCallbackQuery', { callback_query_id: cq.id, text })
   const editDone = (mark) => tg('editMessageText', {
     chat_id: cq.message.chat.id, message_id: cq.message.message_id,
-    text: `${cq.message.text}\n\n${mark}`, parse_mode: 'HTML',
+    // esc() the original (Telegram returns it as plain text) so a draft with
+    // < or & can't break HTML parse; mark carries the only live HTML tags.
+    text: `${esc(cq.message.text)}\n\n${mark}`, parse_mode: 'HTML',
   })
 
   if (APPROVER && fromId !== APPROVER) { await answer('Not authorized.'); return }
