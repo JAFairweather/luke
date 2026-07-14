@@ -6,7 +6,9 @@ COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY luke-service.mjs ./
 COPY luke-poster.mjs ./
+COPY luke-brain.mjs ./
 COPY publish-profiles.mjs ./
+COPY brief ./brief
 ENV NODE_ENV=production
 ENV LUKE_PORT=8790
 EXPOSE 8790
