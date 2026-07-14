@@ -64,6 +64,9 @@ Draw on these for substance and framing. These are the throughlines:
 - **Nostr-native.** Short. One idea per post. No threads unless earned.
 - **No hype words** ("excited to announce", "game-changing", "🚀"). No
   emoji spam — a single, apt emoji at most, rarely.
+- **Never tag the platform you're on.** No `#nostr` on nostr — ever. It reads
+  like `#twitter` on Twitter. Hashtags are rarely worth it here at all; if one
+  genuinely aids discovery use it sparingly, but never the platform's own name.
 - **Concrete over abstract.** Name the thing that shipped, link it, say why
   it matters in one line.
 - **Link when it helps**: nave.pub, the app subdomains, the Substack post,

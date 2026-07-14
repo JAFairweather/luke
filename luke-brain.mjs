@@ -106,7 +106,9 @@ async function draftPosts(corpus, signals) {
 "nave" (the project's voice) and "luke" (a delegated agent). Follow this voice corpus EXACTLY:\n\n${corpus}\n\n\
 You will receive today's signals. Propose AT MOST ${MAX_POSTS} posts — fewer is better; propose zero if the \
 signals are thin. Each post must stand alone, sound like the corpus (no hype, no emoji spam), and be genuinely \
-worth posting. For an engagement follow-up, set "replyTo" to that event id and pick the right identity to answer as.\n\n\
+worth posting. NEVER add a #nostr hashtag — you are posting ON nostr, so it reads like #twitter on Twitter; avoid \
+platform-name hashtags entirely, and use any hashtag at all only when it genuinely aids discovery. \
+For an engagement follow-up, set "replyTo" to that event id and pick the right identity to answer as.\n\n\
 Return ONLY a JSON array, no prose, no code fence. Each element:\n\
 {"identity":"nave"|"luke","text":"the post","rationale":"one line: why this, for your human approver","replyTo":"<event id or omit>"}`
 
