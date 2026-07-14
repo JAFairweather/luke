@@ -15,6 +15,7 @@
 import { createServer } from 'node:http'
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto'
 import { generateSecretKey, getPublicKey, nip19, verifyEvent } from 'nostr-tools'
+import { handlePropose, handleTelegramWebhook, posterStatus } from './luke-poster.mjs'
 
 const PORT = Number(process.env.LUKE_PORT ?? 8790)
 const NAME = process.env.LUKE_NAME ?? 'Luke'
@@ -165,6 +166,14 @@ const LOGIN = shell(`${NAME} — prove your key`, `
 const json = (res, code, obj) => res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(obj))
 const html = (res, code, s) => res.writeHead(code, { 'content-type': 'text/html; charset=utf-8' }).end(s)
 const cookieAttrs = `Path=/; HttpOnly; Secure; SameSite=Lax`
+async function readBody(req, res, cap = 16384) {
+  let raw = ''
+  for await (const chunk of req) {
+    raw += chunk
+    if (raw.length > cap) { res.writeHead(413).end(); req.destroy(); return null }
+  }
+  return raw
+}
 
 const server = createServer(async (req, res) => {
   const url = (req.url || '/').split('?')[0]
@@ -175,7 +184,19 @@ const server = createServer(async (req, res) => {
       master: MASTER_NPUB, mandate: MANDATE,
       delegation: { source: 'master grant', revocable: true },
       cockpit: 'nostr-gated',
+      poster: posterStatus(),
     })
+  }
+
+  // --- The posting loop (see luke-poster.mjs) ---------------------------
+  // The brain proposes; you approve on Telegram; we sign + broadcast.
+  if (req.method === 'POST' && url === '/propose') {
+    const raw = await readBody(req, res, 16384); if (raw === null) return
+    return handlePropose(req, res, raw)
+  }
+  if (req.method === 'POST' && url === '/telegram/webhook') {
+    const raw = await readBody(req, res, 65536); if (raw === null) return
+    return handleTelegramWebhook(req, res, raw)
   }
   if (req.method === 'GET' && (url === '/' || url === '/card')) return html(res, 200, CARD)
   if (req.method === 'GET' && url === '/gate/login') return html(res, 200, LOGIN)
@@ -215,5 +236,7 @@ server.listen(PORT, () => {
   console.log(`\n  ${NAME} — delegated agent + cockpit gate`)
   console.log(`  agent : ${LUKE_NPUB}`)
   console.log(`  master: ${MASTER_NPUB ?? '(unset — gate refuses all)'}`)
-  console.log(`  listening on :${PORT}  (card /, health /health, gate /gate/*)\n`)
+  const ps = posterStatus()
+  console.log(`  poster: ${ps.ready ? `ready — [${ps.identities.join(', ')}], ${ps.relays} relays` : 'idle (set TELEGRAM_BOT_TOKEN, TELEGRAM_APPROVER_ID, PROPOSE_TOKEN, role nsecs)'}`)
+  console.log(`  listening on :${PORT}  (card /, health /health, gate /gate/*, propose /propose)\n`)
 })
