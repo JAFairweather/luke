@@ -1,0 +1,20 @@
+# SOPS config — how Luke's secrets are encrypted.
+#
+# We encrypt with `age` (one keypair, no GPG keyring, no cloud KMS — right
+# for a single box). The age PRIVATE key lives only on the box at
+# /root/.config/sops/age/keys.txt (root-readable). The age PUBLIC key below
+# is what encrypts; it's safe in the repo. Anyone can encrypt to it; only
+# the box can decrypt.
+#
+# FIRST TIME, on the box:
+#   mkdir -p ~/.config/sops/age
+#   age-keygen -o ~/.config/sops/age/keys.txt      # prints the public key
+#   # paste that public key (age1…) below, replacing the placeholder.
+#
+# Then `sops secrets.enc.env` / the encrypt+decrypt commands in SECRETS.md
+# just work — SOPS reads this file to know which recipient to use.
+
+creation_rules:
+  - path_regex: secrets\.enc\.env$
+    # Replace with the age PUBLIC key printed by age-keygen on the box.
+    age: age1REPLACE_WITH_YOUR_BOX_AGE_PUBLIC_KEY

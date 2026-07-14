@@ -1,3 +1,11 @@
+# Plaintext secrets — NEVER commit these.
 .env
+secrets.env
 .luke-key
+
+# The SOPS-encrypted secrets ARE committed (ciphertext, safe in a public
+# repo). This negation makes the intent explicit and guards against a
+# broader *.env ignore ever hiding it.
+!secrets.enc.env
+
 node_modules/
