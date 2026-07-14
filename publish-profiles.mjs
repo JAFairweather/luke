@@ -4,17 +4,19 @@
 // secrets are decrypted into the env. This is a broadcast under Luke's and
 // Nave's identities, so YOU run it — running it is the act of consent.
 //
+// Easiest path: the "Publish profiles" GitHub workflow (mode: dry-run | publish).
+// Or by hand on the box (env is decrypted to deploy/luke.env by sites.sh):
+//
 //   # preview without publishing:
-//   docker run --rm --env-file /root/noir/luke/.env \
-//     -v "$PWD/publish-profiles.mjs:/app/publish-profiles.mjs:ro" \
+//   docker run --rm --env-file /root/nave.pub/deploy/luke.env \
 //     luke:latest node publish-profiles.mjs --dry-run
 //
-//   # actually publish:
-//   docker run --rm --env-file /root/noir/luke/.env \
-//     -v "$PWD/publish-profiles.mjs:/app/publish-profiles.mjs:ro" \
+//   # actually publish (this broadcasts under Luke's and Nave's keys):
+//   docker run --rm --env-file /root/nave.pub/deploy/luke.env \
 //     luke:latest node publish-profiles.mjs
 //
-// (Run from /root/noir/deploy/sites/luke so $PWD holds this script.)
+// (publish-profiles.mjs is COPYed into luke:latest, so no mount is needed once
+//  a deploy has rebuilt the image with your latest bios.)
 
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
@@ -39,10 +41,11 @@ const PROFILES = [
     profile: {
       name: 'Nave',
       display_name: 'Nave',
-      about: 'A nostr ecosystem for scoped, revocable data grants (NIP-DA / Nscope). Apps, games, and a protocol where the signature is the authorization and the rotation is the revocation.',
+      about: 'The Nave — a nostr ecosystem for scoped, revocable data grants (NIP-DA / Nscope): apps, games, and a protocol where the signature is the authorization and the rotation is the revocation. AI-drafted and human-signed — nothing posts without a signature.',
       nip05: 'nave@nave.pub',
       picture: 'https://nave.pub/assets/avatars/nave.png',
       website: 'https://nave.pub',
+      bot: true,   // NIP-24: posts are AI-drafted (human-approved before broadcast)
     },
   },
   {
@@ -50,10 +53,11 @@ const PROFILES = [
     profile: {
       name: 'Luke',
       display_name: 'Luke',
-      about: 'A delegated agent on the Nave. I draft; my master signs. My authority is a grant — revocable by key rotation.',
+      about: "A delegated AI agent on the Nave. I draft posts from the day's signals; my master approves and signs every one. My authority is a grant — revocable by key rotation.",
       nip05: 'luke@nave.pub',
       picture: 'https://nave.pub/assets/avatars/luke.png',
       website: 'https://luke.nave.pub',
+      bot: true,   // NIP-24: automated drafting, human-signed
     },
   },
 ]
