@@ -23,16 +23,22 @@ role identities, never `jaf@`.
 ## One-time setup (on the box)
 
 ```bash
-# 1. Install tools (Debian/Ubuntu)
+# 1. Install tools (Debian/Ubuntu). age is usually already present.
 apt-get update && apt-get install -y age
-curl -Lo /usr/local/bin/sops \
-  https://github.com/getsops/sops/releases/latest/download/sops-v3.9.0.linux.amd64
+# sops: resolve the latest release and fetch the matching linux/amd64 binary.
+SOPS_VER=$(curl -s https://api.github.com/repos/getsops/sops/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+')
+curl -Lo /usr/local/bin/sops "https://github.com/getsops/sops/releases/download/${SOPS_VER}/sops-${SOPS_VER}.linux.amd64"
 chmod +x /usr/local/bin/sops
+sops --version
 
-# 2. Generate the age key (private stays here; public goes in .sops.yaml)
+# 2. Generate the age key — ONLY if you don't already have one.
 mkdir -p ~/.config/sops/age
-age-keygen -o ~/.config/sops/age/keys.txt
-#   → prints "Public key: age1…"  ← copy that
+if [ ! -f ~/.config/sops/age/keys.txt ]; then
+  age-keygen -o ~/.config/sops/age/keys.txt      # creates a NEW keypair
+fi
+# Print the PUBLIC key (works whether it's new or pre-existing — never
+# regenerate an existing key, that would orphan anything encrypted to it):
+age-keygen -y ~/.config/sops/age/keys.txt          # → age1…  ← copy that
 
 # 3. Put the public key in .sops.yaml (replace the placeholder), commit it.
 ```
