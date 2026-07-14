@@ -15,7 +15,11 @@
 # just work — SOPS reads this file to know which recipient to use.
 
 creation_rules:
-  - path_regex: secrets\.enc\.env$
+  # Matches the plaintext input (secrets.env) AND the encrypted output
+  # (secrets.enc.env). SOPS picks the rule from the INPUT path at encrypt
+  # time, so this must match secrets.env — matching only *.enc.env fails
+  # with "no matching creation rules found".
+  - path_regex: secrets.*\.env$
     # The box's age PUBLIC key (from age-keygen -y on the box). Public — safe
     # to commit. Only the matching private key (box-only) can decrypt.
     age: age1n75zynrpugascc7a4qrv3j0n4ja0jennywgzzsgmv7ftyzrvvugsppwg2s
