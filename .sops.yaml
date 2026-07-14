@@ -16,5 +16,6 @@
 
 creation_rules:
   - path_regex: secrets\.enc\.env$
-    # Replace with the age PUBLIC key printed by age-keygen on the box.
-    age: age1REPLACE_WITH_YOUR_BOX_AGE_PUBLIC_KEY
+    # The box's age PUBLIC key (from age-keygen -y on the box). Public — safe
+    # to commit. Only the matching private key (box-only) can decrypt.
+    age: age1n75zynrpugascc7a4qrv3j0n4ja0jennywgzzsgmv7ftyzrvvugsppwg2s
