@@ -17,7 +17,7 @@
 //   node luke-brain.mjs --dry-run     # gather + draft + print, don't propose
 //   node luke-brain.mjs               # also POST each draft to /propose
 
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
@@ -46,6 +46,14 @@ const SINCE_HOURS = Number(process.env.SINCE_HOURS ?? 14)
 const RELAYS = (process.env.LUKE_RELAYS ?? 'wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net')
   .split(',').map(s => s.trim()).filter(Boolean)
 const MAX_POSTS = Number(process.env.MAX_POSTS ?? 3)
+// Continuity ledger (box-local JSON, mounted writable). Records what Luke has
+// proposed so he doesn't repeat himself, and — by matching proposals against
+// what later got PUBLISHED under luke/nave (i.e. what you approved) — learns
+// which drafts you tap yes vs pass on. Unset (or unwritable) → feature off,
+// non-breaking (local dry-runs without the mount still work).
+const BRAIN_LEDGER = process.env.BRAIN_LEDGER?.trim()
+const LEDGER_KEEP = Number(process.env.LEDGER_KEEP ?? 80)          // cap entries
+const LEDGER_LOOKBACK_DAYS = Number(process.env.LEDGER_LOOKBACK_DAYS ?? 21)
 
 const sinceSec = Math.floor(Date.now() / 1000) - SINCE_HOURS * 3600
 const sinceISO = new Date(sinceSec * 1000).toISOString()
@@ -97,15 +105,50 @@ async function signalSubstack() {
 }
 
 // --- signal: nostr engagement on Luke & Nave ----------------------------
+// Read the full engagement picture — replies/mentions (kind 1), reposts (6),
+// reactions (7), and zaps (9735, the strongest resonance signal) — that
+// reference our notes, and pull the text of the OUR note each one is about so
+// the model has context for a reply. Zaps and replies rank first.
+const shortNpub = pk => { try { return nip19.npubEncode(pk).slice(0, 13) + '…' } catch { return (pk || '').slice(0, 8) + '…' } }
+// Sats from a zap receipt: parse the bolt11 amount (lnbc<n><unit>).
+function zapSats(e) {
+  const bolt = (e.tags.find(t => t[0] === 'bolt11') || [])[1] || ''
+  const m = bolt.match(/lnbc(\d+)([munp])?/i); if (!m) return null
+  const mult = { m: 1e-3, u: 1e-6, n: 1e-9, p: 1e-12 }[(m[2] || '').toLowerCase()] ?? 1
+  return Math.round(Number(m[1]) * mult * 1e8) // BTC→sats
+}
+// The zapper's pubkey lives in the embedded zap request (description tag).
+function zapSender(e) {
+  try { return JSON.parse((e.tags.find(t => t[0] === 'description') || [])[1] || '{}').pubkey || e.pubkey }
+  catch { return e.pubkey }
+}
 async function signalEngagement(pks) {
   const authors = Object.values(pks); if (!authors.length) return []
+  const ours = new Set(authors)
   const pool = new SimplePool()
   try {
-    const events = await pool.querySync(RELAYS, { kinds: [1], '#p': authors, since: sinceSec }, { maxWait: 4000 })
-    return events
-      .filter(e => !authors.includes(e.pubkey)) // others' replies/mentions, not our own
-      .slice(0, 12)
-      .map(e => ({ id: e.id, by: nip19.npubEncode(e.pubkey).slice(0, 12) + '…', text: (e.content || '').slice(0, 240) }))
+    const events = await pool.querySync(RELAYS,
+      { kinds: [1, 6, 7, 9735], '#p': authors, since: sinceSec }, { maxWait: 5000 })
+    // Fetch OUR notes being engaged with, so each item carries what it's about.
+    const refIds = new Set()
+    for (const e of events) for (const t of e.tags) if (t[0] === 'e' && t[1]) refIds.add(t[1])
+    const refText = {}
+    if (refIds.size) {
+      const notes = await pool.querySync(RELAYS, { ids: [...refIds].slice(0, 50) }, { maxWait: 4000 })
+      for (const n of notes) if (ours.has(n.pubkey)) refText[n.id] = (n.content || '').replace(/\s+/g, ' ').slice(0, 160)
+    }
+    const ctxOf = e => { const id = (e.tags.filter(t => t[0] === 'e').pop() || [])[1]; return id ? refText[id] || null : null }
+    const items = events.flatMap(e => {
+      if (e.kind === 9735) { const sats = zapSats(e); return [{ kind: 'zap', by: shortNpub(zapSender(e)), sats, ctx: ctxOf(e) }] }
+      if (ours.has(e.pubkey)) return []                       // our own note/repost/reaction — skip
+      if (e.kind === 7) return [{ kind: 'reaction', by: shortNpub(e.pubkey), text: (e.content || '+').slice(0, 16), ctx: ctxOf(e) }]
+      if (e.kind === 6) return [{ kind: 'repost', by: shortNpub(e.pubkey), ctx: ctxOf(e) }]
+      return [{ kind: 'reply', id: e.id, by: shortNpub(e.pubkey), text: (e.content || '').replace(/\s+/g, ' ').slice(0, 240), ctx: ctxOf(e) }]
+    })
+    // Zaps first (by size), then replies (repliable), then reposts, then reactions.
+    const rank = { zap: 0, reply: 1, repost: 2, reaction: 3 }
+    items.sort((a, b) => (rank[a.kind] - rank[b.kind]) || ((b.sats || 0) - (a.sats || 0)))
+    return items.slice(0, 16)
   } catch { return [] }
   finally { pool.close(RELAYS) }
 }
@@ -144,8 +187,18 @@ async function callAnthropic(payload) {
   return await r.json()
 }
 
+// Render one engagement item for the prompt, with an icon per kind and the
+// "on:" context (the text of our note it references).
+function fmtEngagement(e) {
+  const on = e.ctx ? `  (on: "${e.ctx}")` : ''
+  if (e.kind === 'zap') return `- ⚡ zap${e.sats ? ` ${e.sats} sats` : ''} from ${e.by}${on}`
+  if (e.kind === 'repost') return `- ♻ repost by ${e.by}${on}`
+  if (e.kind === 'reaction') return `- ❤ reaction "${e.text}" by ${e.by}${on}`
+  return `- 💬 reply (id ${e.id}) from ${e.by}: "${e.text}"${on}`
+}
+
 // --- draft via Anthropic ------------------------------------------------
-async function draftPosts(corpus, signals) {
+async function draftPosts(corpus, signals, history = { approved: [], passed: [] }) {
   if (!NACT_BROKER_URL && !ANTHROPIC_API_KEY) throw new Error('no LLM path: set NACT_BROKER_URL + BRAIN_NSEC, or ANTHROPIC_API_KEY')
   const system = `You draft short nostr posts for two identities on "the Nave": \
 "nave" (the project's voice) and "luke" (a delegated agent). Follow this voice corpus EXACTLY:\n\n${corpus}\n\n\
@@ -155,14 +208,23 @@ worth posting. Write channel-appropriately — use what a channel's readers expe
 You are drafting for nostr right now: NEVER add a #nostr hashtag (on nostr it reads like #twitter on Twitter — the \
 same tag could be right on a different platform like Twitter/X, but here it is noise). Never tag the platform you \
 are posting on, and on nostr use any hashtag only when it genuinely aids discovery. \
-For an engagement follow-up, set "replyTo" to that event id and pick the right identity to answer as.\n\n\
+For an engagement follow-up, reply ONLY to a "reply" item (it has an id) — set "replyTo" to that id \
+and pick the identity that was engaged with. Zaps/reposts/reactions are resonance signals to learn from, \
+not things to reply to. Use the "on:" context to answer what was actually said.\n\n\
+If a "Your memory" section is present, honor it as a hard rule: never re-propose a PASSED item or a close \
+variant of one (your human already declined it), and don't repeat an APPROVED item verbatim — match its register, move the idea forward.\n\n\
 Return ONLY a JSON array, no prose, no code fence. Each element:\n\
 {"identity":"nave"|"luke","text":"the post","rationale":"one line: why this, for your human approver","replyTo":"<event id or omit>"}`
 
   const user = `TODAY'S SIGNALS (window: last ${SINCE_HOURS}h)\n\n` +
     `## Ecosystem shipping (recent commits)\n${signals.shipping.length ? signals.shipping.map(s => `- [${s.repo}] ${s.msg}`).join('\n') : '(nothing notable)'}\n\n` +
     `## New Substack posts\n${signals.substack.length ? signals.substack.map(s => `- ${s.title} — ${s.link}`).join('\n') : '(none)'}\n\n` +
-    `## Engagement to consider replying to\n${signals.engagement.length ? signals.engagement.map(e => `- (${e.id}) ${e.by}: ${e.text}`).join('\n') : '(none)'}`
+    `## Engagement on Luke & Nave (zaps & replies first)\n${signals.engagement.length ? signals.engagement.map(fmtEngagement).join('\n') : '(none)'}` +
+    ((history.approved.length || history.passed.length) ? (
+      `\n\n## Your memory — learn from your human's taps\n` +
+      (history.approved.length ? `Recently APPROVED (published — this is what lands; echo the register, don't repeat verbatim):\n${history.approved.map(t => `- "${t}"`).join('\n')}\n` : '') +
+      (history.passed.length ? `Recently PASSED (proposed, not approved — do NOT re-propose these or close variants):\n${history.passed.map(t => `- "${t}"`).join('\n')}` : '')
+    ) : '')
 
   const j = await callAnthropic({ model: DRAFT_MODEL, max_tokens: 1400, system, messages: [{ role: 'user', content: user }] })
   const text = (j.content || []).map(c => c.text || '').join('').trim()
@@ -195,26 +257,78 @@ async function propose(p) {
   return { ok: r.ok, status: r.status, body }
 }
 
+// --- continuity ledger (P3) ---------------------------------------------
+const normText = s => (s || '').toLowerCase().replace(/https?:\/\/\S+/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
+const draftHash = (identity, text) => sha256hex(`${identity}\n${normText(text)}`)
+async function readLedger() {
+  if (!BRAIN_LEDGER) return []
+  try { const a = JSON.parse(await readFile(BRAIN_LEDGER, 'utf8')); return Array.isArray(a) ? a : [] }
+  catch { return [] }               // missing/empty/corrupt → start fresh
+}
+async function saveLedger(entries) {
+  if (!BRAIN_LEDGER) return
+  const trimmed = entries.slice(-LEDGER_KEEP)
+  try { await writeFile(BRAIN_LEDGER, JSON.stringify(trimmed, null, 2)) }
+  catch (e) { log(`  ⚠ ledger write failed (${e.message}) — continuing`) }
+}
+// What Luke actually published (= what you approved): our own recent kind-1 notes.
+async function fetchOwnPublished(pks) {
+  const authors = Object.values(pks); if (!authors.length || !BRAIN_LEDGER) return []
+  const since = Math.floor(Date.now() / 1000) - LEDGER_LOOKBACK_DAYS * 86400
+  const pool = new SimplePool()
+  try {
+    const events = await pool.querySync(RELAYS, { kinds: [1], authors, since }, { maxWait: 4000 })
+    return events.map(e => normText(e.content))
+  } catch { return [] }
+  finally { pool.close(RELAYS) }
+}
+// Reconcile the ledger against what's now published, and derive the two
+// feedback lists for the prompt: recently APPROVED (published) and PASSED
+// (proposed a while ago, never published → you tapped no / let it lapse).
+function reconcile(ledger, publishedNorm) {
+  const pub = new Set(publishedNorm)
+  const nowSec = Math.floor(Date.now() / 1000)
+  for (const e of ledger) if (!e.published && pub.has(normText(e.text))) e.published = true
+  const approved = ledger.filter(e => e.published).slice(-8).map(e => e.text)
+  const passed = ledger.filter(e => !e.published && (nowSec - (e.at || 0)) > 2 * 86400).slice(-8).map(e => e.text)
+  return { approved, passed }
+}
+
 // --- run ----------------------------------------------------------------
 const corpus = await readFile(new URL('./brief/voice.md', import.meta.url), 'utf8').catch(() => '')
 if (!corpus) log('  ⚠ brief/voice.md not found — drafting without the voice corpus')
 const pks = pubkeys()
 
 log(`\n  luke-brain — gathering signals (last ${SINCE_HOURS}h)…`)
-const [shipping, substack, engagement] = await Promise.all([signalShipping(), signalSubstack(), signalEngagement(pks)])
+const [shipping, substack, engagement, published] = await Promise.all([
+  signalShipping(), signalSubstack(), signalEngagement(pks), fetchOwnPublished(pks),
+])
 log(`  shipping: ${shipping.length} commits · substack: ${substack.length} posts · engagement: ${engagement.length} notes`)
 
-const candidates = await draftPosts(corpus, { shipping, substack, engagement })
+// P3: reconcile the continuity ledger — mark past proposals that got published
+// (you approved them), and derive the approved/passed feedback for the prompt.
+const ledger = await readLedger()
+const history = reconcile(ledger, published)
+if (BRAIN_LEDGER) log(`  memory: ${ledger.length} in ledger · ${history.approved.length} approved · ${history.passed.length} passed`)
+
+const candidates = await draftPosts(corpus, { shipping, substack, engagement }, history)
 log(`  drafted ${candidates.length} candidate(s)\n`)
 
 for (const [i, p] of candidates.entries()) {
   log(`  [${i + 1}] as ${p.identity}${p.replyTo ? ' (reply)' : ''}: ${p.text}`)
   log(`      ↳ ${p.rationale || ''}`)
   if (DRY) continue
-  if (!PROPOSE_TOKEN) { log('      ⚠ PROPOSE_TOKEN unset — not proposing'); continue }
+  // Phase 2: the brain authenticates /propose with its NIP-98 `brain` signature
+  // (BRAIN_NSEC); the shared PROPOSE_TOKEN is only a pre-migration fallback. Gate
+  // on "no auth at all", so proposing keeps working once the bearer token is retired.
+  if (!BRAIN_NSEC && !PROPOSE_TOKEN) { log('      ⚠ no /propose auth (set BRAIN_NSEC or PROPOSE_TOKEN) — not proposing'); continue }
   const res = await propose(p)
   log(`      → ${res.ok ? `proposed (id ${res.body.id}) — awaiting your Telegram tap` : `FAILED ${res.status}: ${JSON.stringify(res.body)}`}`)
+  // P3: record what we proposed so future runs don't repeat it (and can learn
+  // from whether you later publish it). Only log actually-proposed drafts.
+  if (res.ok) ledger.push({ hash: draftHash(p.identity, p.text), identity: p.identity, text: p.text, at: Math.floor(Date.now() / 1000), published: false })
 }
 
+if (!DRY) await saveLedger(ledger)
 log(`\n  done — ${DRY ? 'dry run, nothing proposed' : `${candidates.length} sent to Telegram for approval`}.\n`)
 process.exit(0)
