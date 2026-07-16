@@ -2,8 +2,11 @@
 //
 // Runs on a schedule (twice a day). Gathers the day's signals, drafts 1–3
 // candidate posts in our voice, and POSTs each to Luke's /propose endpoint —
-// which sends them to you on Telegram to approve. The brain holds NO signing
-// key; it can only propose. Your tap does the rest.
+// which sends them to you on Telegram to approve. The brain holds NO POSTING
+// key — it can only propose; your tap does the rest. (It may hold a dedicated
+// `brain` identity used ONLY to authenticate LLM calls to Nactor's credential
+// broker — that key cannot post as luke/nave, so the approve-before-post
+// property is unchanged.)
 //
 // Signals (all public — no private data):
 //   • themes/voice corpus   brief/voice.md
@@ -15,7 +18,8 @@
 //   node luke-brain.mjs               # also POST each draft to /propose
 
 import { readFile } from 'node:fs/promises'
-import { getPublicKey, nip19 } from 'nostr-tools'
+import { createHash } from 'node:crypto'
+import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 
 const DRY = process.argv.includes('--dry-run')
@@ -23,6 +27,13 @@ const log = (...a) => console.log(...a)
 
 // --- config -------------------------------------------------------------
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY?.trim()
+// Credential-broker path (Phase 2): if set, LLM calls go THROUGH Nactor, which
+// holds the Anthropic key in memory and injects it — the key never lives here.
+// BRAIN_NSEC is a dedicated, activated `brain` identity used only to sign the
+// NIP-98 auth to the broker; it is NOT a posting key. Both unset → direct call
+// with ANTHROPIC_API_KEY (the pre-migration path), so this is non-breaking.
+const NACT_BROKER_URL = process.env.NACT_BROKER_URL?.trim()   // e.g. http://nactor:8791/api
+const BRAIN_NSEC = process.env.BRAIN_NSEC?.trim()
 const DRAFT_MODEL = process.env.DRAFT_MODEL?.trim() || 'claude-sonnet-5'
 const PROPOSE_URL = process.env.PROPOSE_URL?.trim() || 'https://luke.nave.pub/propose'
 const PROPOSE_TOKEN = process.env.PROPOSE_TOKEN?.trim()
@@ -99,9 +110,43 @@ async function signalEngagement(pks) {
   finally { pool.close(RELAYS) }
 }
 
+// --- Anthropic call: broker (Phase 2) or direct (fallback) --------------
+const sha256hex = s => createHash('sha256').update(s).digest('hex')
+function brainSk() {
+  const v = BRAIN_NSEC
+  if (v.startsWith('nsec1')) return nip19.decode(v).data
+  if (/^[0-9a-f]{64}$/i.test(v)) return Uint8Array.from(Buffer.from(v, 'hex'))
+  throw new Error('BRAIN_NSEC must be nsec1… or 64-hex')
+}
+function brokerAuth(method, url, bodyStr) {
+  const tags = [['u', url], ['method', method]]
+  if (bodyStr) tags.push(['payload', sha256hex(bodyStr)])
+  const ev = finalizeEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), tags, content: '' }, brainSk())
+  return 'Nostr ' + Buffer.from(JSON.stringify(ev)).toString('base64')
+}
+// Returns the parsed Anthropic /v1/messages response, either brokered through
+// Nactor (key stays in Nactor) or called directly (pre-migration fallback).
+async function callAnthropic(payload) {
+  if (NACT_BROKER_URL && BRAIN_NSEC) {
+    const u = NACT_BROKER_URL.replace(/\/$/, '') + '/broker'
+    const body = JSON.stringify({ provider: 'anthropic', path: '/v1/messages', method: 'POST', body: payload })
+    const r = await fetch(u, { method: 'POST', headers: { authorization: brokerAuth('POST', u, body), 'content-type': 'application/json' }, body })
+    if (!r.ok) throw new Error(`broker anthropic ${r.status}: ${await r.text().catch(() => '')}`)
+    return await r.json()
+  }
+  if (!ANTHROPIC_API_KEY) throw new Error('no LLM path configured: set NACT_BROKER_URL + BRAIN_NSEC, or ANTHROPIC_API_KEY')
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!r.ok) throw new Error(`anthropic ${r.status}: ${await r.text().catch(() => '')}`)
+  return await r.json()
+}
+
 // --- draft via Anthropic ------------------------------------------------
 async function draftPosts(corpus, signals) {
-  if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set')
+  if (!NACT_BROKER_URL && !ANTHROPIC_API_KEY) throw new Error('no LLM path: set NACT_BROKER_URL + BRAIN_NSEC, or ANTHROPIC_API_KEY')
   const system = `You draft short nostr posts for two identities on "the Nave": \
 "nave" (the project's voice) and "luke" (a delegated agent). Follow this voice corpus EXACTLY:\n\n${corpus}\n\n\
 You will receive today's signals. Propose AT MOST ${MAX_POSTS} posts — fewer is better; propose zero if the \
@@ -119,13 +164,7 @@ Return ONLY a JSON array, no prose, no code fence. Each element:\n\
     `## New Substack posts\n${signals.substack.length ? signals.substack.map(s => `- ${s.title} — ${s.link}`).join('\n') : '(none)'}\n\n` +
     `## Engagement to consider replying to\n${signals.engagement.length ? signals.engagement.map(e => `- (${e.id}) ${e.by}: ${e.text}`).join('\n') : '(none)'}`
 
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: DRAFT_MODEL, max_tokens: 1400, system, messages: [{ role: 'user', content: user }] }),
-  })
-  if (!r.ok) throw new Error(`anthropic ${r.status}: ${await r.text().catch(() => '')}`)
-  const j = await r.json()
+  const j = await callAnthropic({ model: DRAFT_MODEL, max_tokens: 1400, system, messages: [{ role: 'user', content: user }] })
   const text = (j.content || []).map(c => c.text || '').join('').trim()
   const jsonStr = text.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
   let arr; try { arr = JSON.parse(jsonStr) } catch { throw new Error(`model did not return JSON:\n${text}`) }
