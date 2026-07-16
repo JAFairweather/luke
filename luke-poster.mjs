@@ -125,7 +125,7 @@ export async function handlePropose(req, res, raw) {
   if (!IDENTITIES[identity]) return json(res, 400, { why: `unknown identity '${identity}'` })
   const text = String(d.text || '').trim()
   if (!text) return json(res, 400, { why: 'empty text' })
-  if (!BOT || !APPROVER) return json(res, 503, { why: 'telegram not configured' })
+  if (!(BOT || NACT_BROKER_URL) || !APPROVER) return json(res, 503, { why: 'telegram not configured' })
   gc()
   const id = shortId()
   pending.set(id, { identity, text, replyTo: d.replyTo || null, rationale: d.rationale || null, created: Date.now() })
