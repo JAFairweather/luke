@@ -17,7 +17,7 @@
 
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 
 // --- config -------------------------------------------------------------
 const RELAYS = (process.env.LUKE_RELAYS ?? 'wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net')
@@ -26,6 +26,10 @@ const BOT = process.env.TELEGRAM_BOT_TOKEN?.trim()
 const APPROVER = process.env.TELEGRAM_APPROVER_ID?.trim()
 const PROPOSE_TOKEN = process.env.PROPOSE_TOKEN?.trim()
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET?.trim()
+// Phase 2: if set, Telegram calls go THROUGH Nactor's broker (which holds the
+// bot token in memory and injects it into the URL path), so the token need not
+// live here. Signed NIP-98 as the activated `luke` identity.
+const NACT_BROKER_URL = process.env.NACT_BROKER_URL?.trim()   // e.g. http://nactor:8791/api
 const TG = m => `https://api.telegram.org/bot${BOT}/${m}`
 
 function loadSecret(env) {
@@ -44,10 +48,11 @@ for (const [scope, env] of [['luke', 'LUKE_NSEC'], ['nave', 'NAVE_NSEC']]) {
 }
 
 export function posterStatus() {
+  const telegram = Boolean((BOT || NACT_BROKER_URL) && APPROVER)
   return {
-    ready: Boolean(BOT && APPROVER && PROPOSE_TOKEN && Object.keys(IDENTITIES).length),
+    ready: Boolean(telegram && PROPOSE_TOKEN && Object.keys(IDENTITIES).length),
     identities: Object.keys(IDENTITIES),
-    telegram: Boolean(BOT && APPROVER),
+    telegram,
     relays: RELAYS.length,
   }
 }
@@ -60,7 +65,27 @@ function gc() { const now = Date.now(); for (const [k, v] of pending) if (now - 
 const shortId = () => randomBytes(6).toString('base64url')
 const esc = s => String(s).replace(/[<&>]/g, c => ({ '<': '&lt;', '&': '&amp;', '>': '&gt;' }[c]))
 
+const sha256hex = s => createHash('sha256').update(s).digest('hex')
+function lukeBrokerAuth(httpMethod, url, bodyStr) {
+  const sk = IDENTITIES.luke?.sk
+  if (!sk) throw new Error('no luke identity to sign the broker request')
+  const tags = [['u', url], ['method', httpMethod]]
+  if (bodyStr) tags.push(['payload', sha256hex(bodyStr)])
+  const ev = finalizeEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), tags, content: '' }, sk)
+  return 'Nostr ' + Buffer.from(JSON.stringify(ev)).toString('base64')
+}
 async function tg(method, body) {
+  // Broker path (Phase 2): route through Nactor, which injects the bot token —
+  // it never lives in this process. Signed NIP-98 as `luke`. Falls back to the
+  // direct call when the broker isn't configured, so this is non-breaking.
+  if (NACT_BROKER_URL && IDENTITIES.luke) {
+    const u = NACT_BROKER_URL.replace(/\/$/, '') + '/broker'
+    const payload = JSON.stringify({ provider: 'telegram', tgMethod: method, method: 'POST', body })
+    const r = await fetch(u, { method: 'POST', headers: { authorization: lukeBrokerAuth('POST', u, payload), 'content-type': 'application/json' }, body: payload })
+    if (!r.ok) console.warn(`  ⚠ telegram(broker) ${method} → ${r.status} ${await r.text().catch(() => '')}`)
+    return r.ok
+  }
+  if (!BOT) { console.warn(`  ⚠ telegram ${method}: no bot token and no broker configured`); return false }
   const r = await fetch(TG(method), {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   })
