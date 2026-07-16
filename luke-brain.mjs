@@ -172,11 +172,24 @@ Return ONLY a JSON array, no prose, no code fence. Each element:\n\
 }
 
 // --- propose ------------------------------------------------------------
+// Prefer NIP-98 (sign as `brain`), binding this exact body; fall back to the
+// shared bearer token if BRAIN_NSEC isn't set. Non-breaking during migration.
+function proposeAuth(url, bodyStr) {
+  if (BRAIN_NSEC) {
+    try {
+      const tags = [['u', url], ['method', 'POST'], ['payload', sha256hex(bodyStr)]]
+      const ev = finalizeEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), tags, content: '' }, brainSk())
+      return { authorization: 'Nostr ' + Buffer.from(JSON.stringify(ev)).toString('base64') }
+    } catch { /* fall through to bearer */ }
+  }
+  return PROPOSE_TOKEN ? { authorization: `Bearer ${PROPOSE_TOKEN}` } : {}
+}
 async function propose(p) {
+  const bodyStr = JSON.stringify({ identity: p.identity, text: p.text, rationale: p.rationale, replyTo: p.replyTo || null })
   const r = await fetch(PROPOSE_URL, {
     method: 'POST',
-    headers: { 'authorization': `Bearer ${PROPOSE_TOKEN}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ identity: p.identity, text: p.text, rationale: p.rationale, replyTo: p.replyTo || null }),
+    headers: { ...proposeAuth(PROPOSE_URL, bodyStr), 'content-type': 'application/json' },
+    body: bodyStr,
   })
   const body = await r.json().catch(() => ({}))
   return { ok: r.ok, status: r.status, body }

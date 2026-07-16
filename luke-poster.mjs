@@ -15,7 +15,7 @@
 //                            { identity: "luke"|"nave", text, rationale?, replyTo? }
 //   POST /telegram/webhook — Telegram → box. Verified by secret-token header.
 
-import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
+import { finalizeEvent, getPublicKey, verifyEvent, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 
@@ -30,6 +30,9 @@ const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET?.trim()
 // bot token in memory and injects it into the URL path), so the token need not
 // live here. Signed NIP-98 as the activated `luke` identity.
 const NACT_BROKER_URL = process.env.NACT_BROKER_URL?.trim()   // e.g. http://nactor:8791/api
+// Phase 2: the brain authenticates to /propose by SIGNING (NIP-98) as `brain`
+// instead of presenting a shared bearer token. We authorize its pubkey here.
+const BRAIN_PK = (() => { const v = process.env.BRAIN_NPUB?.trim(); if (!v) return null; try { return v.startsWith('npub1') ? nip19.decode(v).data : (/^[0-9a-f]{64}$/i.test(v) ? v.toLowerCase() : null) } catch { return null } })()
 const TG = m => `https://api.telegram.org/bot${BOT}/${m}`
 
 function loadSecret(env) {
@@ -116,8 +119,7 @@ async function sendCard(id, { identity, text, rationale }) {
 
 // --- POST /propose : the brain hands us a draft --------------------------
 export async function handlePropose(req, res, raw) {
-  const auth = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')
-  if (!PROPOSE_TOKEN || !constantEq(auth, PROPOSE_TOKEN)) return json(res, 401, { why: 'bad propose token' })
+  if (!verifyProposeAuth(req, raw)) return json(res, 401, { why: 'unauthorized — sign NIP-98 as brain, or present the propose token' })
   let d; try { d = JSON.parse(raw) } catch { return json(res, 400, { why: 'bad json' }) }
   const identity = String(d.identity || '').toLowerCase()
   if (!IDENTITIES[identity]) return json(res, 400, { why: `unknown identity '${identity}'` })
@@ -187,4 +189,25 @@ function json(res, code, obj) { res.writeHead(code, { 'content-type': 'applicati
 function constantEq(a, b) {
   const x = Buffer.from(a || ''), y = Buffer.from(b || '')
   return x.length === y.length && timingSafeEqual(x, y)
+}
+// Authorize POST /propose. Preferred: a NIP-98 (kind 27235) signature from the
+// `brain` identity, binding this exact body (payload hash) and freshness — no
+// shared secret. Fallback (pre-migration): the bearer PROPOSE_TOKEN.
+function verifyProposeAuth(req, raw) {
+  const h = req.headers['authorization'] || ''
+  if (h.startsWith('Nostr ') && BRAIN_PK) {
+    try {
+      const ev = JSON.parse(Buffer.from(h.slice(6).trim(), 'base64').toString('utf8'))
+      const tag = n => (ev.tags.find(t => t[0] === n) || [])[1]
+      if (ev.kind !== 27235 || ev.pubkey !== BRAIN_PK || !verifyEvent(ev)) return false
+      if (Math.abs(Math.floor(Date.now() / 1000) - (ev.created_at || 0)) > 60) return false
+      if ((tag('method') || '').toUpperCase() !== 'POST') return false
+      let uPath; try { uPath = new URL(tag('u')).pathname } catch { return false }
+      if (uPath !== '/propose') return false
+      if (raw && raw.length && tag('payload') !== sha256hex(raw)) return false
+      return true
+    } catch { return false }
+  }
+  const bearer = h.replace(/^Bearer\s+/i, '')
+  return Boolean(PROPOSE_TOKEN && constantEq(bearer, PROPOSE_TOKEN))
 }
