@@ -76,14 +76,20 @@ function lukeBrokerAuth(httpMethod, url, bodyStr) {
 }
 async function tg(method, body) {
   // Broker path (Phase 2): route through Nactor, which injects the bot token —
-  // it never lives in this process. Signed NIP-98 as `luke`. Falls back to the
-  // direct call when the broker isn't configured, so this is non-breaking.
+  // it never lives in this process. Signed NIP-98 as `luke`. If the broker path
+  // errors AND we still hold the bot token, fall back to the direct call — a
+  // safety net so switching the broker on can't drop approval cards. Once the
+  // broker is proven stable and BOT is removed from the env, there's no fallback.
   if (NACT_BROKER_URL && IDENTITIES.luke) {
-    const u = NACT_BROKER_URL.replace(/\/$/, '') + '/broker'
-    const payload = JSON.stringify({ provider: 'telegram', tgMethod: method, method: 'POST', body })
-    const r = await fetch(u, { method: 'POST', headers: { authorization: lukeBrokerAuth('POST', u, payload), 'content-type': 'application/json' }, body: payload })
-    if (!r.ok) console.warn(`  ⚠ telegram(broker) ${method} → ${r.status} ${await r.text().catch(() => '')}`)
-    return r.ok
+    try {
+      const u = NACT_BROKER_URL.replace(/\/$/, '') + '/broker'
+      const payload = JSON.stringify({ provider: 'telegram', tgMethod: method, method: 'POST', body })
+      const r = await fetch(u, { method: 'POST', headers: { authorization: lukeBrokerAuth('POST', u, payload), 'content-type': 'application/json' }, body: payload })
+      if (r.ok) return true
+      console.warn(`  ⚠ telegram(broker) ${method} → ${r.status} ${await r.text().catch(() => '')}`)
+    } catch (e) { console.warn(`  ⚠ telegram(broker) ${method} threw: ${e?.message || e}`) }
+    if (!BOT) return false
+    console.warn(`  ↩ telegram ${method}: falling back to the direct call`)
   }
   if (!BOT) { console.warn(`  ⚠ telegram ${method}: no bot token and no broker configured`); return false }
   const r = await fetch(TG(method), {
