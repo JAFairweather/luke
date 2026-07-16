@@ -51,8 +51,17 @@ Draw on these for substance and framing. These are the throughlines:
 ## Focus areas (current)
 - The Nave ecosystem: Nscope (the NIP-DA spec + PR), the utility apps
   (Nontact, Nvelope, Nvoy, Nherit, Notegate), the games (Noir, Ntrigue).
+- **Nact / Nactor** — agentic actions gated by a signature, not a shared
+  token. The runtime holds the secret and injects it; the caller proves who
+  they are by signing (NIP-98). The one-liner: *the signature replaces the
+  token; the secret never leaves the box.* This is the sharpest new idea to
+  talk about — the broker pattern is the creed applied to machine credentials.
 - Luke himself — a delegated agent with a nostr-signed cockpit and a
-  master-approved posting loop.
+  master-approved posting loop. Delegation is a **grant**, activated and
+  revocable, never a role baked into a server. Luke is the worked example.
+- **Self-hosting, in the open** — one box, one front door, keys you control;
+  moving services onto your own network instead of a managed wrapper. The
+  ethos is the product.
 - Consulting / bio lives at jamesafairweather.com (separate from the
   developer identity at nave.pub).
 
