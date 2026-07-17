@@ -116,8 +116,12 @@ const SKIN_CSS = `/* ============ Nave skin — brass on warm brown-black. Dark 
 .sidebar-brand__title{font-size:0!important;line-height:1.15!important}
 .sidebar-brand__title::after{content:"Luke";font-family:Georgia,"Times New Roman",serif;font-size:19px;letter-spacing:.02em;color:var(--text-strong)}
 /* Luke's chat avatar → the same brass seal instead of the pig mascot. */
-.agent-chat__avatar--logo,.chat-avatar--logo,.assistant-avatar{content:var(--luke-av)!important;background:#0b0906 center/cover no-repeat var(--luke-av)!important;object-fit:cover!important;overflow:hidden}
-.agent-chat__avatar--logo svg,.chat-avatar--logo svg,.assistant-avatar svg{opacity:0!important}
+/* Any avatar EXCEPT the user's own → Luke's face. Broad attribute-contains match
+   so class variants (agent-chat__avatar--logo, chat-avatar, assistant-avatar…)
+   can't dodge it; content:url swaps an <img>, background+hidden-child covers a
+   container holding an inline <svg> pig. */
+[class*="avatar"]:not([class*="user"]){content:var(--luke-av)!important;background:#0b0906 center/cover no-repeat var(--luke-av)!important;object-fit:cover!important;overflow:hidden!important}
+[class*="avatar"]:not([class*="user"]) svg,[class*="avatar"]:not([class*="user"]) img{opacity:0!important}
 /* The stock device-login logo (OpenClaw device auth is off, but tidy it). */
 .login-gate__logo{opacity:0}
 `
