@@ -156,7 +156,7 @@ const LOGIN = shell(`${NAME} — prove your key`, `
         tags: [['u', u], ['method', 'POST']], content: ''
       });
       const r = await fetch('/gate/auth', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(evt) });
-      if (r.ok) { location.href = '/cockpit'; }
+      if (r.ok) { location.href = '/'; }   // cockpit UI is at root on cockpit.nave.pub
       else { const j = await r.json().catch(()=>({})); err.textContent = 'Refused: ' + (j.why || r.status); }
     } catch (e) { err.textContent = 'Signing cancelled or failed.'; }
   };
