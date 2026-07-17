@@ -9,6 +9,7 @@ RUN npm install --omit=dev --no-audit --no-fund
 COPY luke-service.mjs ./
 COPY luke-poster.mjs ./
 COPY luke-console.mjs ./
+COPY luke-skin.mjs ./
 COPY luke-brain.mjs ./
 COPY publish-profiles.mjs ./
 COPY brief ./brief

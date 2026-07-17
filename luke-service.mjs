@@ -17,6 +17,7 @@ import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto'
 import { generateSecretKey, getPublicKey, nip19, verifyEvent } from 'nostr-tools'
 import { handlePropose, handleTelegramWebhook, posterStatus } from './luke-poster.mjs'
 import { handleConsole } from './luke-console.mjs'
+import { handleCockpitSkin } from './luke-skin.mjs'
 
 const PORT = Number(process.env.LUKE_PORT ?? 8790)
 const NAME = process.env.LUKE_NAME ?? 'Luke'
@@ -186,6 +187,14 @@ const server = createServer(async (req, res) => {
   // forward_auth on console.nave.pub still needs) falls through untouched.
   if (host === 'console.nave.pub' || url === '/console' || url.startsWith('/console/')) {
     if (await handleConsole(req, res, url, { verifyToken, MASTER_PK, parseCookies })) return
+  }
+
+  // --- Cockpit skin (cockpit.nave.pub) — Nave re-tint of the OpenClaw UI ------
+  // Caddy routes only the skin stylesheet + the SPA document here (assets + the
+  // gateway WebSocket go straight to OpenClaw). We serve the stylesheet and
+  // inject its <link> into the document; /gate/* falls through to the gate.
+  if (host === 'cockpit.nave.pub') {
+    if (await handleCockpitSkin(req, res, url)) return
   }
 
   if (req.method === 'GET' && url === '/health') {
