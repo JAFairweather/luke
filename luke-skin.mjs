@@ -109,17 +109,15 @@ const SKIN_CSS = `/* ============ Nave skin — brass on warm brown-black. Dark 
 .update-banner{display:none!important}
 /* Sidebar brand block → a brass Luke seal + NAVE / Luke wordmark. The seal is a
    ::before over a hidden original; the eyebrow/title text is replaced via ::after. */
-.sidebar-brand__logo{background:radial-gradient(circle at 50% 38%,#1c1510,#0b0906)!important;border:1px solid var(--accent-muted)!important;border-radius:9px!important;position:relative;overflow:hidden}
+.sidebar-brand__logo{background:#0b0906 center/cover no-repeat url("https://nave.pub/assets/avatars/luke.png")!important;border-radius:9px!important;overflow:hidden}
 .sidebar-brand__logo>*{opacity:0!important}
-.sidebar-brand__logo::before{content:"";position:absolute;inset:0;background:center/60% no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg transform='translate(4 4)' fill='none' stroke='%23c39a56' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='9' r='4'/%3E%3Cpath d='M5 20 Q12 14 19 20'/%3E%3C/g%3E%3C/svg%3E")}
 .sidebar-brand__eyebrow{font-size:0!important}
 .sidebar-brand__eyebrow::after{content:"NAVE";font-family:var(--mono);font-size:11px;letter-spacing:.26em;color:var(--accent)}
 .sidebar-brand__title{font-size:0!important;line-height:1.15!important}
 .sidebar-brand__title::after{content:"Luke";font-family:Georgia,"Times New Roman",serif;font-size:19px;letter-spacing:.02em;color:var(--text-strong)}
 /* Luke's chat avatar → the same brass seal instead of the pig mascot. */
-.agent-chat__avatar--logo{background:radial-gradient(circle at 50% 38%,#1c1510,#0b0906)!important;border:1px solid var(--accent-muted)!important;position:relative;overflow:hidden}
+.agent-chat__avatar--logo{background:#0b0906 center/cover no-repeat url("https://nave.pub/assets/avatars/luke.png")!important;overflow:hidden}
 .agent-chat__avatar--logo>*{opacity:0!important}
-.agent-chat__avatar--logo::before{content:"";position:absolute;inset:0;background:center/58% no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg transform='translate(4 4)' fill='none' stroke='%23c39a56' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='9' r='4'/%3E%3Cpath d='M5 20 Q12 14 19 20'/%3E%3C/g%3E%3C/svg%3E")}
 /* The stock device-login logo (OpenClaw device auth is off, but tidy it). */
 .login-gate__logo{opacity:0}
 `
@@ -127,8 +125,12 @@ const SKIN_CSS = `/* ============ Nave skin — brass on warm brown-black. Dark 
 // Inject the skin <link> into the SPA document, just before </head> so it loads
 // after the app's own stylesheet and wins.
 function inject(htmlText) {
-  const tag = '<link rel="stylesheet" href="/__nave-skin.css">'
-  let out = htmlText.includes('</head>') ? htmlText.replace('</head>', tag + '</head>') : htmlText + tag
+  // Skin + Luke's favicon, added after the app's own <head>. Drop OpenClaw's
+  // own icon links first so the tab shows Luke's face, not the pig.
+  const head = '<link rel="stylesheet" href="/__nave-skin.css">'
+    + '<link rel="icon" href="https://nave.pub/assets/avatars/luke.png">'
+  let out = htmlText.replace(/<link[^>]+rel=["']?[^"'>]*icon[^"'>]*["']?[^>]*>/ig, '')
+  out = out.includes('</head>') ? out.replace('</head>', head + '</head>') : out + head
   // Rebrand the browser-tab title too (the shell ships "OpenClaw Control").
   out = out.replace(/<title>[^<]*<\/title>/i, '<title>Luke · Nave</title>')
   return out
