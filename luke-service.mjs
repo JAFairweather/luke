@@ -18,6 +18,7 @@ import { generateSecretKey, getPublicKey, nip19, verifyEvent } from 'nostr-tools
 import { handlePropose, handleTelegramWebhook, posterStatus } from './luke-poster.mjs'
 import { handleConsole } from './luke-console.mjs'
 import { handleCockpitSkin } from './luke-skin.mjs'
+import { handleReveal } from './luke-reveal.mjs'
 
 const PORT = Number(process.env.LUKE_PORT ?? 8790)
 const NAME = process.env.LUKE_NAME ?? 'Luke'
@@ -185,7 +186,12 @@ const server = createServer(async (req, res) => {
   // Served + APIed by luke-console.mjs. It handles '/', '/console' and
   // '/console/api/*'; everything else (notably /gate/*, which Caddy's
   // forward_auth on console.nave.pub still needs) falls through untouched.
-  if (host === 'console.nave.pub' || url === '/console' || url.startsWith('/console/')) {
+  if (host === 'console.nave.pub' || url === '/console' || url.startsWith('/console/') || url.startsWith('/reveal')) {
+    // The one-time secret reveal (console.nave.pub/reveal/<id>) is checked first;
+    // it re-verifies the gate in-process. Then the total-config Console.
+    if (url.startsWith('/reveal')) {
+      if (await handleReveal(req, res, url, { verifyToken, MASTER_PK, parseCookies })) return
+    }
     if (await handleConsole(req, res, url, { verifyToken, MASTER_PK, parseCookies })) return
   }
 
