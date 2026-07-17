@@ -208,8 +208,13 @@ const server = createServer(async (req, res) => {
 
   // forward_auth target: 200 → Caddy proxies the cockpit; else redirect to login.
   if (req.method === 'GET' && url === '/gate/verify') {
-    const tok = verifyToken(parseCookies(req.headers.cookie).luke_gate)
+    const rawCookie = parseCookies(req.headers.cookie).luke_gate
+    const tok = verifyToken(rawCookie)
     if (tok && MASTER_PK && tok.pk === MASTER_PK) return res.writeHead(200).end('ok')
+    // A present-but-invalid cookie (expired / tampered / wrong key) is worth an
+    // audit line; a plain no-cookie request (logged out, or an asset fetch) is
+    // the normal path to the login and stays quiet to avoid flooding.
+    if (rawCookie) console.warn(`  ✗ gate/verify denied — cookie present but ${tok ? 'wrong key' : 'invalid/expired'} @ ${new Date().toISOString()}`)
     return res.writeHead(302, { location: '/gate/login' }).end()
   }
 
@@ -223,8 +228,13 @@ const server = createServer(async (req, res) => {
     const host = req.headers['x-forwarded-host'] || req.headers.host
     const expectUrl = `${proto}://${host}/gate/auth`
     const v = verifyNip98(evt, expectUrl)
-    if (!v.ok) return json(res, 403, { why: v.why })
+    if (!v.ok) {
+      const who = evt?.pubkey ? ` (pubkey ${nip19.npubEncode(evt.pubkey).slice(0, 14)}…)` : ''
+      console.warn(`  ✗ cockpit login DENIED — ${v.why}${who} @ ${new Date().toISOString()}`)
+      return json(res, 403, { why: v.why })
+    }
     const token = sign({ pk: evt.pubkey, exp: Math.floor(Date.now() / 1000) + TTL })
+    console.log(`  ✓ cockpit login — ${nip19.npubEncode(evt.pubkey)} @ ${new Date().toISOString()}`)
     res.writeHead(204, { 'set-cookie': `luke_gate=${token}; Max-Age=${TTL}; ${cookieAttrs}` }).end()
     return
   }
