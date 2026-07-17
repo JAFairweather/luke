@@ -126,6 +126,57 @@ const SKIN_CSS = `/* ============ Nave skin — brass on warm brown-black. Dark 
 .login-gate__logo{opacity:0}
 `
 
+// ============ Robust mascot swap — the durable fix for the pig/claw ============
+// CSS element selectors can't cross a shadow-root boundary, and OpenClaw renders
+// parts of its chrome (incl. some avatars) inside shadow DOM — that's why the
+// CSS-only swap kept "reverting" in places. This script runs IN the page, walks
+// EVERY node including shadow roots, and repaints the brand seal + Luke's chat
+// avatar. A debounced MutationObserver re-applies it across SPA re-renders, and
+// because it keys off class-name substrings (not exact classes) it survives
+// OpenClaw upgrades that rename things. The human user's own avatar is left alone.
+const LUKE_AV_URL = 'https://nave.pub/assets/avatars/luke.png'
+const SKIN_JS = `(function(){
+  var AV=${JSON.stringify(LUKE_AV_URL)};
+  function cls(el){ try{ var c=el.getAttribute&&el.getAttribute('class'); return c==null?'':String(c); }catch(e){ return ''; } }
+  function kind(el){
+    var c=cls(el);
+    if(/sidebar-brand__logo/.test(c)) return 'brand';
+    if(/avatar/i.test(c) && !/user/i.test(c)) return 'avatar';
+    return null;
+  }
+  function paint(el){
+    if(el.tagName==='IMG'){
+      if(el.getAttribute('src')!==AV){ el.setAttribute('src',AV); el.removeAttribute('srcset'); }
+    } else {
+      var want='#0b0906 center/cover no-repeat url("'+AV+'")';
+      if(el.style.background!==want){ el.style.background=want; el.style.borderRadius='9px'; el.style.overflow='hidden'; }
+      var kids=el.querySelectorAll?el.querySelectorAll('svg,img'):[];
+      for(var i=0;i<kids.length;i++){ kids[i].style.opacity='0'; }
+    }
+  }
+  function walk(root){
+    if(!root||!root.querySelectorAll) return;
+    var all=root.querySelectorAll('*');
+    for(var i=0;i<all.length;i++){
+      var el=all[i];
+      if(kind(el)) { try{ paint(el); }catch(e){} }
+      if(el.shadowRoot) walk(el.shadowRoot);
+    }
+  }
+  var scheduled=false, mo=null;
+  function run(){
+    scheduled=false;
+    if(mo) mo.disconnect();
+    try{ walk(document); }catch(e){}
+    if(mo) try{ mo.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['src','class']}); }catch(e){}
+  }
+  function schedule(){ if(scheduled) return; scheduled=true; (window.requestAnimationFrame||setTimeout)(run); }
+  mo=new MutationObserver(schedule);
+  if(document.readyState!=='loading') run(); else document.addEventListener('DOMContentLoaded',run);
+  // Belt-and-suspenders for very-late hydration of shadow-mounted chrome.
+  var n=0, iv=setInterval(function(){ schedule(); if(++n>20) clearInterval(iv); }, 500);
+})();`
+
 // Inject the skin <link> into the SPA document, just before </head> so it loads
 // after the app's own stylesheet and wins.
 function inject(htmlText) {
@@ -137,6 +188,10 @@ function inject(htmlText) {
   out = out.includes('</head>') ? out.replace('</head>', head + '</head>') : out + head
   // Rebrand the browser-tab title too (the shell ships "OpenClaw Control").
   out = out.replace(/<title>[^<]*<\/title>/i, '<title>Luke · Nave</title>')
+  // The shadow-DOM-piercing mascot swap, at the very end of <body> so the SPA
+  // has mounted (the MutationObserver handles anything mounted later).
+  const script = '<script>' + SKIN_JS + '</script>'
+  out = out.includes('</body>') ? out.replace('</body>', script + '</body>') : out + script
   return out
 }
 
