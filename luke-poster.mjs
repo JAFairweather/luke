@@ -18,6 +18,7 @@
 import { finalizeEvent, getPublicKey, verifyEvent, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { randomBytes, timingSafeEqual, createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
 
 // --- config -------------------------------------------------------------
 const RELAYS = (process.env.LUKE_RELAYS ?? 'wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net')
@@ -60,10 +61,35 @@ export function posterStatus() {
   }
 }
 
-// --- pending proposals (in-memory; a mid-day restart drops unresolved ones) ---
-const pending = new Map() // id -> { identity, text, replyTo, created }
+// --- pending proposals ---------------------------------------------------
+// Held in memory, but PERSISTED to a box-local file when PENDING_FILE is set, so
+// a restart/deploy never drops a draft you haven't tapped yet. The TTL counts
+// from the real created-time (which survives), so a proposal lives out its 36h
+// regardless of how many times the service restarts. Unset → in-memory only
+// (non-breaking).
+const PENDING_FILE = process.env.PENDING_FILE?.trim()
+const pending = new Map() // id -> { identity, text, replyTo, rationale, created }
 const TTL_MS = 36 * 60 * 60 * 1000
-function gc() { const now = Date.now(); for (const [k, v] of pending) if (now - v.created > TTL_MS) pending.delete(k) }
+function savePending() {
+  if (!PENDING_FILE) return
+  try { writeFileSync(PENDING_FILE, JSON.stringify([...pending.entries()])) }
+  catch (e) { console.warn('  ⚠ pending save failed:', e.message) }
+}
+function loadPending() {
+  if (!PENDING_FILE) return
+  try {
+    const now = Date.now()
+    for (const [k, v] of JSON.parse(readFileSync(PENDING_FILE, 'utf8')))
+      if (v?.created && now - v.created <= TTL_MS) pending.set(k, v)
+    if (pending.size) console.log(`  ↺ restored ${pending.size} pending proposal(s) from ${PENDING_FILE}`)
+  } catch { /* missing/corrupt → start empty */ }
+}
+function gc() {
+  const now = Date.now(); let changed = false
+  for (const [k, v] of pending) if (now - v.created > TTL_MS) { pending.delete(k); changed = true }
+  if (changed) savePending()
+}
+loadPending()
 
 const shortId = () => randomBytes(6).toString('base64url')
 const esc = s => String(s).replace(/[<&>]/g, c => ({ '<': '&lt;', '&': '&amp;', '>': '&gt;' }[c]))
@@ -129,8 +155,9 @@ export async function handlePropose(req, res, raw) {
   gc()
   const id = shortId()
   pending.set(id, { identity, text, replyTo: d.replyTo || null, rationale: d.rationale || null, created: Date.now() })
+  savePending()
   const sent = await sendCard(id, { identity, text, rationale: d.rationale })
-  if (!sent) { pending.delete(id); return json(res, 502, { why: 'telegram send failed' }) }
+  if (!sent) { pending.delete(id); savePending(); return json(res, 502, { why: 'telegram send failed' }) }
   return json(res, 200, { ok: true, id, status: 'awaiting-approval' })
 }
 
@@ -157,7 +184,7 @@ export async function handleTelegramWebhook(req, res, raw) {
   const [verb, id] = data.split(':')
   const p = pending.get(id)
   if (!p) { await answer('This draft has expired.'); return }
-  pending.delete(id)
+  pending.delete(id); savePending()
 
   if (verb === 'no') { await answer('Discarded.'); await editDone('❌ <b>Discarded</b>'); return }
   if (verb === 'ok') {
