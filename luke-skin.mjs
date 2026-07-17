@@ -111,9 +111,10 @@ const SKIN_CSS = `/* ============ Nave skin — brass on warm brown-black. Dark 
 /* Sidebar brand block → a brass Luke seal + NAVE / Luke wordmark. The seal is a
    ::before over a hidden original; the eyebrow/title text is replaced via ::after. */
 .sidebar-brand__logo{content:var(--luke-av)!important;object-fit:cover!important;border-radius:9px!important;overflow:hidden}
-.sidebar-brand__eyebrow{font-size:0!important}
-.sidebar-brand__eyebrow::after{content:"NAVE";font-family:var(--mono);font-size:11px;letter-spacing:.26em;color:var(--accent)}
+/* v2026.7.1 removed the eyebrow element, so the NAVE kicker rides the title
+   block instead (::before), which survived the Control UI overhaul. */
 .sidebar-brand__title{font-size:0!important;line-height:1.15!important}
+.sidebar-brand__title::before{content:"NAVE";display:block;font-family:var(--mono);font-size:11px;letter-spacing:.26em;color:var(--accent)}
 .sidebar-brand__title::after{content:"Luke";font-family:Georgia,"Times New Roman",serif;font-size:19px;letter-spacing:.02em;color:var(--text-strong)}
 /* Luke's chat avatar → the same brass seal instead of the pig mascot. */
 /* Any avatar EXCEPT the user's own → Luke's face. Broad attribute-contains match
