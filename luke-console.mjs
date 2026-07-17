@@ -378,7 +378,7 @@ function renderSession(s){
   const add=el('div','sec')
   add.append(el('div','sec-h','<h3>This session also loads</h3><span class="cap">on top of the base</span>'))
   const as=el('div','strip')
-  ;(s.adds||[]).forEach(n=>as.append(fcard(n,null)))
+  ;(s.adds||[]).forEach((n,i)=>as.append(fcard(n,s.base.length+i)))
   ;(s.reads||[]).forEach(r=>{ const c=el('div','fc'); c.dataset.o='stock'; c.style.cursor='default'; c.innerHTML='<div class="nm">'+esc(r)+'</div><div class="rl">read/written by this beat</div>'; as.append(c) })
   const addb=el('button','fc add','＋ add a file'); addb.onclick=addFileFlow; as.append(addb)
   add.append(as); m.append(add)
