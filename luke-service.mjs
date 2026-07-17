@@ -16,6 +16,7 @@ import { createServer } from 'node:http'
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto'
 import { generateSecretKey, getPublicKey, nip19, verifyEvent } from 'nostr-tools'
 import { handlePropose, handleTelegramWebhook, posterStatus } from './luke-poster.mjs'
+import { handleConsole } from './luke-console.mjs'
 
 const PORT = Number(process.env.LUKE_PORT ?? 8790)
 const NAME = process.env.LUKE_NAME ?? 'Luke'
@@ -177,6 +178,15 @@ async function readBody(req, res, cap = 16384) {
 
 const server = createServer(async (req, res) => {
   const url = (req.url || '/').split('?')[0]
+  const host = (req.headers['x-forwarded-host'] || req.headers.host || '').split(':')[0]
+
+  // --- The Luke Console (console.nave.pub) — gated total-config editor -------
+  // Served + APIed by luke-console.mjs. It handles '/', '/console' and
+  // '/console/api/*'; everything else (notably /gate/*, which Caddy's
+  // forward_auth on console.nave.pub still needs) falls through untouched.
+  if (host === 'console.nave.pub' || url === '/console' || url.startsWith('/console/')) {
+    if (await handleConsole(req, res, url, { verifyToken, MASTER_PK, parseCookies })) return
+  }
 
   if (req.method === 'GET' && url === '/health') {
     return json(res, 200, {
