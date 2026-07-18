@@ -26,7 +26,7 @@ const FILES = [
   { name: 'IDENTITY.md',   group: 'Identity',         editable: true,  origin: 'stock', role: 'The bootstrap identity record OpenClaw expects.',                    loadWhen: 'Every session (bootstrap identity record)' },
   { name: 'USER.md',       group: 'Identity',         editable: true,  origin: 'yours', role: 'Who he’s helping — you. The context he leads with.',                 loadWhen: 'Every session ("who you’re helping")' },
   { name: 'AGENTS.md',     group: 'Operating manual', editable: true,  origin: 'yours', role: 'The standing operating manual — how he acts, closes the loop.',       loadWhen: 'Every session — always injected (the SOP)' },
-  { name: 'HEARTBEAT.md',  group: 'Rhythm',           editable: true,  origin: 'yours', role: 'The content of the two daily beats.',                                loadWhen: 'Loaded every session; drives the two daily beats' },
+  { name: 'BEATS.md',      group: 'Rhythm',           editable: true,  origin: 'yours', role: 'The script for the two DAILY beats (Morning + Evening). NOT the engine heartbeat — this is content a cron session follows, not the 30-min pulse. (Renamed from HEARTBEAT.md to end that confusion.)', loadWhen: 'Loaded every session; drives the Morning + Evening beats' },
   { name: 'TOOLS.md',      group: 'Capabilities',     editable: true,  origin: 'stock', role: 'Capabilities available locally, and what is NOT wired.',             loadWhen: 'Every session (local setup + what is NOT wired)' },
   { name: 'MEMORY.md',     group: 'Memory',           editable: true,  origin: 'yours', role: 'Curated long-term memory. Main session only.',                       loadWhen: 'MAIN session only — curated long-term memory' },
   { name: 'punchlist.md',  group: 'Ledger',           editable: true,  origin: 'yours', role: 'The live ledger — 🔨 Renovation and 📋 Commitments.',                loadWhen: 'Read by the morning beat; kept honest live' },
@@ -37,35 +37,53 @@ const FILES = [
 // Console's primary axis: pick a session, see exactly what it loads.
 const SESSIONS = [
   { id: 'main', name: 'Main session', when: 'on demand · direct chat with you',
-    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'HEARTBEAT.md', 'MEMORY.md'], adds: [],
+    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'BEATS.md', 'MEMORY.md'], adds: [],
     note: 'MEMORY.md loads here because this is a main/direct session — the one place his long-term memory comes in.',
     effect: 'Interactive. He reads the base, leads with your context, and works the conversation with you.' },
-  { id: 'am', name: 'Morning beat', when: '07:00 America/New_York · isolated cron', active: 'HEARTBEAT.md → Morning beat',
-    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'HEARTBEAT.md'], adds: ['punchlist.md'], reads: ['nostr-check.js (read-only script)'],
+  { id: 'am', name: 'Morning beat', when: '07:00 America/New_York · isolated cron', active: 'BEATS.md → Morning beat',
+    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'BEATS.md'], adds: ['punchlist.md'], reads: ['nostr-check.js (read-only script)'],
     note: 'Same base as every session — MEMORY.md is absent because a cron beat isn’t a main session.',
     effect: 'Runs the discipline check, flags the single most important stale commitment, scans nostr, offers at most one post — to Telegram.' },
-  { id: 'pm', name: 'Evening beat', when: '22:00 America/New_York · isolated cron', active: 'HEARTBEAT.md → Evening beat',
-    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'HEARTBEAT.md'], adds: ['MEMORY.md'], reads: ['memory/YYYY-MM-DD.md (daily log)'],
+  { id: 'pm', name: 'Evening beat', when: '22:00 America/New_York · isolated cron', active: 'BEATS.md → Evening beat',
+    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'BEATS.md'], adds: ['MEMORY.md'], reads: ['memory/YYYY-MM-DD.md (daily log)'],
     note: 'Same base — plus it opens MEMORY.md and the daily log to WRITE the day’s signal, not just read.',
     effect: 'One close-the-loop prompt, then writes the day’s signal to the daily log and promotes durable facts into long-term memory.' },
+  { id: 'heartbeat', name: 'Heartbeat', when: 'every 30m · 07:00–22:00 ET · isolated engine pulse', active: 'engine heartbeat — openclaw.json · agents.defaults.heartbeat',
+    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'BEATS.md'], adds: [],
+    note: 'The engine’s OWN pulse — this is the real "heartbeat," not BEATS.md and not a cron beat. An isolated tick every 30m where Luke checks whether anything needs doing. MEMORY.md is absent (not a main session). Cadence is config, not a prompt: see the Engine panel.',
+    effect: 'A lightweight autonomous check-in between the daily beats. Most ticks find nothing to do — the point is Luke stays awake, not that every pulse acts.' },
+  { id: 'dream', name: 'Nightly dreaming', when: '~03:00 ET nightly · isolated · memory-core', active: 'dreaming sweep — openclaw.json · plugins.memory-core.config.dreaming',
+    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'BEATS.md'], adds: ['MEMORY.md'], reads: ['memory/ (the daily logs)'],
+    note: 'The memory-consolidation pass. Runs isolated at night, sweeps the day’s memory, promotes durable facts. Driven by the Dream-Diary subagent on the cheap flash model — config in memory-core, not a prompt file.',
+    effect: 'Consolidates memory overnight: reads the day’s logs, distills durable facts into long-term memory. This is why MEMORY.md stays curated without you tending it.' },
 ]
 
 // The behavior chain — how the files become behavior, as triggers → what loads → effect.
 const CHAIN = [
   {
     trigger: 'Session start', when: 'every session',
-    loads: ['SOUL.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'IDENTITY.md', 'HEARTBEAT.md', 'MEMORY.md*'],
+    loads: ['SOUL.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'IDENTITY.md', 'BEATS.md', 'MEMORY.md*'],
     effect: 'OpenClaw injects these into the system prompt. They ARE Luke’s standing knowledge and rules for the turn. (*MEMORY.md only in a main/direct session.)',
   },
   {
     trigger: 'Morning beat', when: '07:00 America/New_York · isolated cron session',
-    loads: ['AGENTS.md → Timers, Closing the loop', 'HEARTBEAT.md → Morning beat', 'punchlist.md', 'nostr-check.js'],
+    loads: ['AGENTS.md → Timers, Closing the loop', 'BEATS.md → Morning beat', 'punchlist.md', 'nostr-check.js'],
     effect: 'Luke runs the discipline check, flags the single most important stale punchlist item, scans nostr, and offers at most one post — delivered to Telegram.',
   },
   {
     trigger: 'Evening beat', when: '22:00 America/New_York · isolated cron session',
-    loads: ['HEARTBEAT.md → Evening beat', 'memory/YYYY-MM-DD.md', 'MEMORY.md'],
+    loads: ['BEATS.md → Evening beat', 'memory/YYYY-MM-DD.md', 'MEMORY.md'],
     effect: 'One close-the-loop prompt, then Luke writes the day’s signal to the daily log and promotes durable facts into MEMORY.md.',
+  },
+  {
+    trigger: 'Heartbeat', when: 'every 30m · 07:00–22:00 ET · isolated engine session',
+    loads: ['the base set (SOUL/IDENTITY/USER/AGENTS/TOOLS/BEATS)'],
+    effect: 'The engine’s own 30-minute pulse (openclaw.json · agents.defaults.heartbeat.every). An autonomous check-in BETWEEN the daily beats — this is the real "heartbeat," not BEATS.md and not a cron beat. Cadence shows live in the Engine panel.',
+  },
+  {
+    trigger: 'Nightly dreaming', when: '~03:00 ET · isolated · memory-core',
+    loads: ['MEMORY.md', 'memory/ daily logs'],
+    effect: 'The nightly memory-consolidation sweep (openclaw.json · plugins.memory-core.config.dreaming). Distills the day into durable long-term memory; the Dream-Diary subagent runs on the flash model.',
   },
   {
     trigger: 'Engine', when: 'openclaw.json · the gateway runtime',
