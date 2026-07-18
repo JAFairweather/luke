@@ -7,7 +7,7 @@
 //                   INBOX alone is nearly empty signal. We read the "Next Brief"
 //                   label (Cora's queue) first, then INBOX unseen. SUMMARIZE ONLY:
 //                   no drafting yet, and sending is impossible (no SMTP config).
-//   ☀️ weather    — wttr.in, only when WEATHER_LOC is set (no IP-geo guessing)
+//   ☀️ weather    — Milford CT + Sámara CR with tides (Open-Meteo + NOAA, keyless)
 //   📌 nudges     — reads /state/nudges.md if present (CRM loop will write it)
 //   🎸 interests  — reads /state/interests.md if present (tour watcher will write it)
 // Missing/empty sections are omitted, never padded.
@@ -36,7 +36,6 @@ const HIMALAYA = process.env.HIMALAYA_BIN?.trim() || 'himalaya'
 const MAIL_FOLDERS = (process.env.MAIL_FOLDERS?.trim() || 'Next Brief,INBOX')
   .split(',').map(s => s.trim()).filter(Boolean)
 const MAIL_PER_FOLDER = Math.min(10, Math.max(1, Number(process.env.MAIL_PER_FOLDER ?? 5)))
-const WEATHER_LOC = process.env.WEATHER_LOC?.trim()
 const NUDGES_FILE = process.env.NUDGES_FILE?.trim() || '/state/nudges.md'
 const INTERESTS_FILE = process.env.INTERESTS_FILE?.trim() || '/state/interests.md'
 
@@ -128,18 +127,57 @@ async function emailSection() {
   return { title: '📧 Mail (read-only; Cora runs the inbox)', lines }
 }
 
-// --- section: weather ----------------------------------------------------
-async function weatherSection() {
-  if (!WEATHER_LOC) return null
+// --- section: weather + tides (James's two shores) ------------------------
+// Milford CT (home, Long Island Sound) + Sámara CR (Esterones). Forecast via
+// Open-Meteo (keyless, unambiguous coords). Tides: NOAA CO-OPS hi/lo
+// predictions for Milford (Bridgeport station 8467150, the local reference);
+// Open-Meteo marine sea-level extrema for Sámara (NOAA is US-only) — hourly
+// resolution, so those times are ≈. Both APIs return LOCAL times as strings.
+const SHORES = [
+  { name: 'Milford CT', lat: 41.222, lon: -73.057, tz: 'America/New_York', tide: { kind: 'noaa', station: '8467150' } },
+  { name: 'Sámara CR', lat: 9.881, lon: -85.528, tz: 'America/Costa_Rica', tide: { kind: 'marine' } },
+]
+const WMO = c => c === 0 ? 'clear' : c <= 2 ? 'partly cloudy' : c === 3 ? 'cloudy' : c <= 48 ? 'fog'
+  : c <= 57 ? 'drizzle' : c <= 67 ? 'rain' : c <= 77 ? 'snow' : c <= 82 ? 'showers' : c >= 95 ? 'storms' : 'mixed'
+const ampm = hm => { const [h, m] = hm.split(':').map(Number); const h12 = ((h + 11) % 12) + 1; return `${h12}:${String(m).padStart(2, '0')}${h < 12 ? 'a' : 'p'}` }
+async function tideLine(loc) {
   try {
-    const r = await fetch(`https://wttr.in/${encodeURIComponent(WEATHER_LOC)}?format=j1`, { headers: { 'user-agent': 'luke-morning' } })
-    if (!r.ok) return null
-    const j = await r.json()
-    const c = j.current_condition?.[0], d = j.weather?.[0]
-    if (!c) return null
-    const desc = c.weatherDesc?.[0]?.value || ''
-    return { title: '☀️ Weather', lines: [`${esc(WEATHER_LOC)}: ${c.temp_F}°F ${esc(desc)} · hi ${d?.maxtempF}° lo ${d?.mintempF}°`] }
+    if (loc.tide.kind === 'noaa') {
+      const d = ymd(loc.tz, new Date()).replace(/-/g, '')
+      const u = `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&application=nave-luke&begin_date=${d}&end_date=${d}&datum=MLLW&station=${loc.tide.station}&time_zone=lst_ldt&units=english&interval=hilo&format=json`
+      const j = await (await fetch(u)).json()
+      const p = j.predictions || []
+      if (!p.length) return null
+      return p.map(t => `${t.type === 'H' ? '▲' : '▼'}${ampm(t.t.slice(11, 16))}`).join(' ')
+    }
+    // marine: find local extrema in today's hourly sea-level series
+    const u = `https://marine-api.open-meteo.com/v1/marine?latitude=${loc.lat}&longitude=${loc.lon}&hourly=sea_level_height_msl&timezone=${encodeURIComponent(loc.tz)}&forecast_days=1`
+    const j = await (await fetch(u)).json()
+    const hs = j.hourly?.sea_level_height_msl || [], ts = j.hourly?.time || []
+    const ext = []
+    for (let i = 1; i < hs.length - 1; i++) {
+      if (hs[i] >= hs[i - 1] && hs[i] > hs[i + 1]) ext.push(`▲≈${ampm(ts[i].slice(11, 16))}`)
+      else if (hs[i] <= hs[i - 1] && hs[i] < hs[i + 1]) ext.push(`▼≈${ampm(ts[i].slice(11, 16))}`)
+    }
+    return ext.length ? ext.join(' ') : null
   } catch { return null }
+}
+async function weatherSection() {
+  const lines = []
+  for (const loc of SHORES) {
+    try {
+      const u = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&temperature_unit=fahrenheit&timezone=${encodeURIComponent(loc.tz)}&forecast_days=1`
+      const j = await (await fetch(u)).json()
+      const d = j.daily
+      if (!d) continue
+      const rain = d.precipitation_probability_max?.[0]
+      let line = `<b>${esc(loc.name)}</b>: ${WMO(d.weather_code?.[0] ?? -1)} · hi ${Math.round(d.temperature_2m_max[0])}° lo ${Math.round(d.temperature_2m_min[0])}°${rain != null ? ` · rain ${rain}%` : ''}`
+      const tides = await tideLine(loc)
+      if (tides) line += `\n   tides ${tides}`
+      lines.push(line)
+    } catch { /* skip a shore that errors */ }
+  }
+  return lines.length ? { title: '☀️ Weather + tides', lines } : null
 }
 
 // --- sections from state files (written by later systems) ----------------
