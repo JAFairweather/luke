@@ -51,11 +51,11 @@ const PROFILES = [
     profile: {
       name: 'Nave',
       display_name: 'Nave',
-      about: 'The Nave — a nostr ecosystem for scoped, revocable data grants (NIP-DA / Nscope): apps, games, and a protocol where the signature is the authorization and the rotation is the revocation. AI-drafted and human-signed — nothing posts without a signature.',
+      about: 'The Nave — the overall identity of the ecosystem. A self-hosted nostr platform for scoped, revocable data grants (NIP-DA / Nscope): the root the box runs under, from which the runtimes and agents beneath it are bootstrapped — the Nave Nactor, Luke, Brain, Noir, Nact_jaf. Not an approver or a single agent; the ground they all stand on, where the signature is the authorization and the rotation is the revocation.',
       nip05: 'nave@nave.pub',
       picture: 'https://nave.pub/assets/avatars/nave.png',
       website: 'https://nave.pub',
-      bot: true,   // NIP-24: posts are AI-drafted (human-approved before broadcast)
+      bot: true,   // NIP-24: an automated, human-owned identity
     },
   },
   {
