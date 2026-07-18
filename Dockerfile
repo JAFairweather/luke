@@ -13,6 +13,7 @@ COPY luke-skin.mjs ./
 COPY luke-reveal.mjs ./
 COPY luke-brain.mjs ./
 COPY luke-calendar.mjs ./
+COPY luke-morning.mjs ./
 COPY publish-profiles.mjs ./
 COPY brief ./brief
 ENV NODE_ENV=production
