@@ -206,14 +206,11 @@ const text = `☀️ <b>Morning, James</b> — ${day}\n\n` +
 log(`  sections: ${sections.map(s => s.title.replace(/<[^>]+>/g, '')).join(' · ') || '(none)'}`)
 if (DRY) { log('\n----- brief (dry run) -----\n' + text.replace(/<[^>]+>/g, '') + '\n---------------------------\n'); process.exit(0) }
 if (!APPROVER) { log('  ⚠ TELEGRAM_APPROVER_ID unset — not sending'); process.exit(1) }
-// Speak AS Luke: the assistant bot's token lives in Nactor as 'telegram-luke'.
-// Fall back to the approvals bot only if that credential isn't imported yet,
-// so the brief never silently vanishes during a migration window.
+// Speak AS Luke or not at all: the assistant bot's token lives in Nactor as
+// 'telegram-luke'. There is deliberately NO fallback to the approvals bot —
+// wrong voice is worse than no message (2026-07-17). If the credential isn't
+// loaded yet, log and exit non-zero so the cron log shows it.
 const msg = { chat_id: APPROVER, text, parse_mode: 'HTML', disable_web_page_preview: true }
-let r = await broker({ provider: 'telegram-luke', tgMethod: 'sendMessage', method: 'POST', body: msg })
-if (!r.ok && (r.status === 503 || r.status === 400)) {
-  log(`  ⚠ telegram-luke unavailable (${r.status}) — falling back to approvals bot`)
-  r = await broker({ provider: 'telegram', tgMethod: 'sendMessage', method: 'POST', body: msg })
-}
+const r = await broker({ provider: 'telegram-luke', tgMethod: 'sendMessage', method: 'POST', body: msg })
 log(r.ok ? '  → sent.\n' : `  ✗ send failed ${r.status}: ${r.text.slice(0, 120)}\n`)
 process.exit(r.ok ? 0 : 1)
