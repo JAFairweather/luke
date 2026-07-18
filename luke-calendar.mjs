@@ -152,7 +152,7 @@ function briefing(items, today) {
 // --- deliver ------------------------------------------------------------
 async function send(text) {
   if (!APPROVER) { log('  ⚠ TELEGRAM_APPROVER_ID unset — printing instead of sending.'); log('\n' + text + '\n'); return false }
-  const r = await broker({ provider: 'telegram', tgMethod: 'sendMessage', method: 'POST', body: { chat_id: APPROVER, text, parse_mode: 'HTML', disable_web_page_preview: true } }, APPROVE_SK)
+  const r = await broker({ provider: 'telegram-nactjaf', tgMethod: 'sendMessage', method: 'POST', body: { chat_id: APPROVER, text, parse_mode: 'HTML', disable_web_page_preview: true } }, APPROVE_SK)
   if (!r.ok) { log(`  ✗ telegram send failed ${r.status}: ${r.text.slice(0, 160)}`); return false }
   return true
 }

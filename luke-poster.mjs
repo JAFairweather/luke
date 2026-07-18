@@ -115,7 +115,7 @@ async function tg(method, body) {
   if (NACT_BROKER_URL && APPROVE_SK) {
     try {
       const u = NACT_BROKER_URL.replace(/\/$/, '') + '/broker'
-      const payload = JSON.stringify({ provider: 'telegram', tgMethod: method, method: 'POST', body })
+      const payload = JSON.stringify({ provider: 'telegram-nactjaf', tgMethod: method, method: 'POST', body })
       const r = await fetch(u, { method: 'POST', headers: { authorization: brokerAuth(APPROVE_SK, 'POST', u, payload), 'content-type': 'application/json' }, body: payload })
       if (r.ok) return true
       console.warn(`  ⚠ telegram(broker) ${method} → ${r.status} ${await r.text().catch(() => '')}`)
