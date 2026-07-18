@@ -105,7 +105,7 @@ const PROFILES = [
     profile: {
       name: 'Nact_jaf',
       display_name: 'Nact_jaf',
-      about: "jaf's Nact — the approvals channel of the Nave box. Every action an agent proposes routes here for the Director's tap, and nothing enacts without it. A carrier identity tied to the Director role: it delivers approvals, it holds no power to act on its own.",
+      about: "The approvals channel of Director jaf — jaf's Nact on the Nave box. Every action an agent proposes routes here for the Director's tap, and nothing enacts without it. A carrier identity tied to the Director role: it delivers approvals, it holds no power to act on its own.",
       nip05: 'nact_jaf@nave.pub',
       picture: 'https://nave.pub/assets/avatars/nactjaf.svg',
       website: 'https://nave.pub',

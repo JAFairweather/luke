@@ -44,12 +44,16 @@ function loadSecret(env) {
   return null
 }
 
-// The identities the poster can sign as: scope → { sk, npub }.
+// The identities the poster can sign as: scope → { sk, npub }. nactjaf owns the
+// Nact-Approvals telegram channel — the approval cards are sent as it.
 const IDENTITIES = {}
-for (const [scope, env] of [['luke', 'LUKE_NSEC'], ['nave', 'NAVE_NSEC']]) {
+for (const [scope, env] of [['luke', 'LUKE_NSEC'], ['nave', 'NAVE_NSEC'], ['nactjaf', 'NACTJAF_NSEC']]) {
   const sk = loadSecret(env)
   if (sk) IDENTITIES[scope] = { sk, pk: getPublicKey(sk), npub: nip19.npubEncode(getPublicKey(sk)) }
 }
+// The signer for the approvals telegram send: Nact_jaf (owns credential:telegram),
+// falling back to luke during migration if that key isn't on-box yet.
+const APPROVE_SK = (IDENTITIES.nactjaf || IDENTITIES.luke)?.sk
 
 export function posterStatus() {
   const telegram = Boolean((BOT || NACT_BROKER_URL) && APPROVER)
@@ -95,9 +99,8 @@ const shortId = () => randomBytes(6).toString('base64url')
 const esc = s => String(s).replace(/[<&>]/g, c => ({ '<': '&lt;', '&': '&amp;', '>': '&gt;' }[c]))
 
 const sha256hex = s => createHash('sha256').update(s).digest('hex')
-function lukeBrokerAuth(httpMethod, url, bodyStr) {
-  const sk = IDENTITIES.luke?.sk
-  if (!sk) throw new Error('no luke identity to sign the broker request')
+function brokerAuth(sk, httpMethod, url, bodyStr) {
+  if (!sk) throw new Error('no signing identity for the broker request')
   const tags = [['u', url], ['method', httpMethod]]
   if (bodyStr) tags.push(['payload', sha256hex(bodyStr)])
   const ev = finalizeEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), tags, content: '' }, sk)
@@ -109,11 +112,11 @@ async function tg(method, body) {
   // errors AND we still hold the bot token, fall back to the direct call — a
   // safety net so switching the broker on can't drop approval cards. Once the
   // broker is proven stable and BOT is removed from the env, there's no fallback.
-  if (NACT_BROKER_URL && IDENTITIES.luke) {
+  if (NACT_BROKER_URL && APPROVE_SK) {
     try {
       const u = NACT_BROKER_URL.replace(/\/$/, '') + '/broker'
       const payload = JSON.stringify({ provider: 'telegram', tgMethod: method, method: 'POST', body })
-      const r = await fetch(u, { method: 'POST', headers: { authorization: lukeBrokerAuth('POST', u, payload), 'content-type': 'application/json' }, body: payload })
+      const r = await fetch(u, { method: 'POST', headers: { authorization: brokerAuth(APPROVE_SK, 'POST', u, payload), 'content-type': 'application/json' }, body: payload })
       if (r.ok) return true
       console.warn(`  ⚠ telegram(broker) ${method} → ${r.status} ${await r.text().catch(() => '')}`)
     } catch (e) { console.warn(`  ⚠ telegram(broker) ${method} threw: ${e?.message || e}`) }
