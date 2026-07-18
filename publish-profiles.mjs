@@ -84,16 +84,32 @@ const PROFILES = [
     },
   },
   {
-    // NACTOR_NSEC lives in nactor.env (box-local) — pass --env-file nactor.env too.
+    // NACTOR_NSEC now comes from the SOPS-sealed nave.env (was nactor.env).
     key: 'NACTOR_NSEC',
     profile: {
-      name: 'Nactor',
-      display_name: 'Nactor',
-      about: 'The Nact runtime on the Nave — an on-box credential broker and NIP-98-gated control plane. It keeps no long-term secrets on disk: it dereferences scoped grants (NIP-DA) from relays and brokers only the actions the Director approves.',
+      name: 'Nave Nactor',
+      display_name: 'Nave Nactor',
+      about: 'The Nactor for the Nave box — a per-box credential/execution runtime. "Nactor" is a role, not a singleton: other boxes run their own. This one is the Nave\'s. It keeps no long-term secrets on disk: it dereferences scoped grants (NIP-DA) from relays and brokers only the actions the Director approves.',
       nip05: 'nactor@nave.pub',
       picture: 'https://nave.pub/assets/avatars/nactor.svg',
       website: 'https://nave.pub',
       bot: true,   // NIP-24: automated agent, human-authorized
+    },
+  },
+  {
+    // NACTJAF_NSEC rides in nave.env (sealed workspace-side in secrets/nactjaf.age).
+    // jaf's Nact — the Nact-Approvals channel identity, tied to the Director role.
+    // A low-authority carrier key: it carries approval DMs to the Director; it
+    // cannot enact.
+    key: 'NACTJAF_NSEC',
+    profile: {
+      name: 'Nact_jaf',
+      display_name: 'Nact_jaf',
+      about: "jaf's Nact — the approvals channel of the Nave box. Every action an agent proposes routes here for the Director's tap, and nothing enacts without it. A carrier identity tied to the Director role: it delivers approvals, it holds no power to act on its own.",
+      nip05: 'nact_jaf@nave.pub',
+      picture: 'https://nave.pub/assets/avatars/nactjaf.svg',
+      website: 'https://nave.pub',
+      bot: true,   // NIP-24: automated approval carrier, human-authorized
     },
   },
 ]
