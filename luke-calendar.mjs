@@ -11,9 +11,11 @@
 //   node luke-calendar.mjs --dry-run   # fetch + format + print, don't send
 //   node luke-calendar.mjs             # also send the briefing to your Telegram
 //
-// Auth: signs NIP-98 as the activated `brain` identity (BRAIN_NSEC) — the same
-// key the brain uses for the broker. The broker authorizes any activated
-// identity, so one key covers both the calendar read and the Telegram send.
+// Auth: signs each broker call as the credential's OWNER (credential sovereignty)
+// — the calendar read as `luke` (LUKE_NSEC), the Nact-Approvals Telegram send as
+// `Nact_jaf` (NACTJAF_NSEC) once that key is on-box, with brain/luke as migration
+// fallbacks. Under ownership enforcement the broker checks the caller holds a
+// grant for the credential, so the signer must match the manifest.
 
 import { createHash } from 'node:crypto'
 import { finalizeEvent, nip19 } from 'nostr-tools'
@@ -23,39 +25,48 @@ const log = (...a) => console.log(...a)
 
 // --- config -------------------------------------------------------------
 const NACT_BROKER_URL = process.env.NACT_BROKER_URL?.trim()          // http://nactor:8791/api
-const BRAIN_NSEC = process.env.BRAIN_NSEC?.trim()
+const LUKE_NSEC = process.env.LUKE_NSEC?.trim()                      // reads the calendar (gcal is Luke's I/O)
+const NACTJAF_NSEC = process.env.NACTJAF_NSEC?.trim()               // owns the Nact-Approvals telegram (once provisioned)
+const BRAIN_NSEC = process.env.BRAIN_NSEC?.trim()                    // migration fallback
 const APPROVER = process.env.TELEGRAM_APPROVER_ID?.trim()            // your Telegram chat id
 const CAL_ID = process.env.CAL_ID?.trim() || 'primary'
 const CAL_TZ = process.env.CAL_TZ?.trim() || process.env.TZ?.trim() || 'America/New_York'
 const CAL_DAYS = Math.max(1, Number(process.env.CAL_DAYS ?? 1))     // 1 = today; 2 = today+tomorrow
 const CAL_MAX = Math.min(50, Math.max(1, Number(process.env.CAL_MAX ?? 25)))
 
-if (!NACT_BROKER_URL || !BRAIN_NSEC) {
-  console.error('  ✗ need NACT_BROKER_URL + BRAIN_NSEC (the broker path). Nothing to do.')
+if (!NACT_BROKER_URL || !(LUKE_NSEC || BRAIN_NSEC)) {
+  console.error('  ✗ need NACT_BROKER_URL + LUKE_NSEC (the broker path). Nothing to do.')
   process.exit(1)
 }
 
-// --- broker auth (NIP-98 as `brain`) ------------------------------------
+// --- broker auth — sign each call as the credential's OWNER (sovereignty) ----
+// gcal is Luke's I/O → sign as luke; the Nact-Approvals telegram send → sign as
+// Nact_jaf (falling back to luke/brain until that key is on-box). Under ownership
+// enforcement the broker checks the caller holds a grant for the credential, so
+// the signer must match the manifest.
 const sha256hex = s => createHash('sha256').update(s).digest('hex')
-function brainSk() {
-  const v = BRAIN_NSEC
+const loadSk = v => {
+  if (!v) return null
   if (v.startsWith('nsec1')) return nip19.decode(v).data
   if (/^[0-9a-f]{64}$/i.test(v)) return Uint8Array.from(v.match(/.{1,2}/g).map(b => parseInt(b, 16)))
-  throw new Error('BRAIN_NSEC must be nsec1… or 64-hex')
+  throw new Error('nsec must be nsec1… or 64-hex')
 }
-const SK = brainSk()
-function brokerAuth(url, bodyStr) {
+const LUKE_SK = loadSk(LUKE_NSEC)
+const BRAIN_SK = loadSk(BRAIN_NSEC)
+const LUKE_OR_BRAIN = LUKE_SK || BRAIN_SK                       // the calendar reader (luke), brain as fallback
+const APPROVE_SK = loadSk(NACTJAF_NSEC) || LUKE_OR_BRAIN        // the approvals telegram — Nact_jaf when present
+function brokerAuth(url, bodyStr, sk) {
   const tags = [['u', url], ['method', 'POST']]
   if (bodyStr) tags.push(['payload', sha256hex(bodyStr)])
-  const ev = finalizeEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), tags, content: '' }, SK)
+  const ev = finalizeEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), tags, content: '' }, sk)
   return 'Nostr ' + Buffer.from(JSON.stringify(ev)).toString('base64')
 }
 // One RPC to Nactor's broker. `inner` is the { provider, path/tgMethod, method, body }
-// envelope the broker forwards. Returns { ok, status, json, text }.
-async function broker(inner) {
+// envelope the broker forwards; `sk` is the identity to sign as. Returns { ok, status, json, text }.
+async function broker(inner, sk = LUKE_OR_BRAIN) {
   const u = NACT_BROKER_URL.replace(/\/$/, '') + '/broker'
   const body = JSON.stringify(inner)
-  const r = await fetch(u, { method: 'POST', headers: { authorization: brokerAuth(u, body), 'content-type': 'application/json' }, body })
+  const r = await fetch(u, { method: 'POST', headers: { authorization: brokerAuth(u, body, sk), 'content-type': 'application/json' }, body })
   const text = await r.text().catch(() => '')
   let json = null; try { json = JSON.parse(text) } catch { /* non-json */ }
   return { ok: r.ok, status: r.status, json, text }
@@ -141,7 +152,7 @@ function briefing(items, today) {
 // --- deliver ------------------------------------------------------------
 async function send(text) {
   if (!APPROVER) { log('  ⚠ TELEGRAM_APPROVER_ID unset — printing instead of sending.'); log('\n' + text + '\n'); return false }
-  const r = await broker({ provider: 'telegram', tgMethod: 'sendMessage', method: 'POST', body: { chat_id: APPROVER, text, parse_mode: 'HTML', disable_web_page_preview: true } })
+  const r = await broker({ provider: 'telegram', tgMethod: 'sendMessage', method: 'POST', body: { chat_id: APPROVER, text, parse_mode: 'HTML', disable_web_page_preview: true } }, APPROVE_SK)
   if (!r.ok) { log(`  ✗ telegram send failed ${r.status}: ${r.text.slice(0, 160)}`); return false }
   return true
 }

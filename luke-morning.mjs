@@ -14,8 +14,10 @@
 //
 //   node luke-morning.mjs --dry-run    # print, don't send
 //
-// Auth: NIP-98 as `brain` (BRAIN_NSEC) for both broker calls; delivery to
-// TELEGRAM_APPROVER_ID via the telegram broker. Private data → only to you.
+// Auth: NIP-98 as `luke` (LUKE_NSEC) for both broker calls — reading the calendar
+// and sending via Luke's assistant bot are Luke's I/O (the actor), not the brain's.
+// Falls back to BRAIN_NSEC during the migration. Delivery to TELEGRAM_APPROVER_ID
+// via the telegram-luke broker. Private data → only to you.
 
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
@@ -26,6 +28,7 @@ const DRY = process.argv.includes('--dry-run')
 const log = (...a) => console.log(...a)
 
 const NACT_BROKER_URL = process.env.NACT_BROKER_URL?.trim()
+const LUKE_NSEC = process.env.LUKE_NSEC?.trim()
 const BRAIN_NSEC = process.env.BRAIN_NSEC?.trim()
 const APPROVER = process.env.TELEGRAM_APPROVER_ID?.trim()
 const CAL_ID = process.env.CAL_ID?.trim() || 'primary'
@@ -39,15 +42,16 @@ const MAIL_PER_FOLDER = Math.min(10, Math.max(1, Number(process.env.MAIL_PER_FOL
 const NUDGES_FILE = process.env.NUDGES_FILE?.trim() || '/state/nudges.md'
 const INTERESTS_FILE = process.env.INTERESTS_FILE?.trim() || '/state/interests.md'
 
-if (!NACT_BROKER_URL || !BRAIN_NSEC) { console.error('  ✗ need NACT_BROKER_URL + BRAIN_NSEC'); process.exit(1) }
+if (!NACT_BROKER_URL || !(LUKE_NSEC || BRAIN_NSEC)) { console.error('  ✗ need NACT_BROKER_URL + LUKE_NSEC'); process.exit(1) }
 
-// --- broker (NIP-98 as brain) -------------------------------------------
+// --- broker (NIP-98 as `luke` — the actor; brain is a migration fallback) ----
 const sha256hex = s => createHash('sha256').update(s).digest('hex')
-const SK = (() => {
-  if (BRAIN_NSEC.startsWith('nsec1')) return nip19.decode(BRAIN_NSEC).data
-  if (/^[0-9a-f]{64}$/i.test(BRAIN_NSEC)) return Uint8Array.from(BRAIN_NSEC.match(/.{1,2}/g).map(b => parseInt(b, 16)))
-  throw new Error('BRAIN_NSEC must be nsec1… or 64-hex')
-})()
+const loadSk = v => {
+  if (v.startsWith('nsec1')) return nip19.decode(v).data
+  if (/^[0-9a-f]{64}$/i.test(v)) return Uint8Array.from(v.match(/.{1,2}/g).map(b => parseInt(b, 16)))
+  throw new Error('nsec must be nsec1… or 64-hex')
+}
+const SK = loadSk(LUKE_NSEC || BRAIN_NSEC)   // prefer luke; brain only if luke's key is absent
 async function broker(inner) {
   const u = NACT_BROKER_URL.replace(/\/$/, '') + '/broker'
   const body = JSON.stringify(inner)
