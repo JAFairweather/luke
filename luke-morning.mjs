@@ -33,7 +33,7 @@ const CAL_TZ = process.env.CAL_TZ?.trim() || 'America/New_York'
 const CAL_MAX = Math.min(50, Math.max(1, Number(process.env.CAL_MAX ?? 25)))
 const HIMALAYA = process.env.HIMALAYA_BIN?.trim() || 'himalaya'
 // Cora's queue label first; INBOX unseen second. Override via MAIL_FOLDERS.
-const MAIL_FOLDERS = (process.env.MAIL_FOLDERS?.trim() || 'Next Brief,INBOX')
+const MAIL_FOLDERS = (process.env.MAIL_FOLDERS?.trim() || '📥 Next Brief,INBOX')
   .split(',').map(s => s.trim()).filter(Boolean)
 const MAIL_PER_FOLDER = Math.min(10, Math.max(1, Number(process.env.MAIL_PER_FOLDER ?? 5)))
 const NUDGES_FILE = process.env.NUDGES_FILE?.trim() || '/state/nudges.md'
@@ -111,9 +111,9 @@ function him(args) {
 async function emailSection() {
   const lines = []
   for (const folder of MAIL_FOLDERS) {
-    // INBOX: only unseen matters. Cora labels (e.g. "Next Brief"): latest items.
+    // Latest items per folder. Cora's labels are emoji-prefixed ("📥 Next Brief");
+    // INBOX stays lean under Cora, so latest-N is honest signal there too.
     const args = ['envelope', 'list', '-f', folder, '-s', String(MAIL_PER_FOLDER), '-o', 'json']
-    if (folder.toUpperCase() === 'INBOX') args.push('not', 'seen')
     const envs = await him(args)
     if (!Array.isArray(envs) || !envs.length) continue
     lines.push(`<u>${esc(folder)}</u>`)
