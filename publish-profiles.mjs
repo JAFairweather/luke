@@ -1,18 +1,28 @@
-// publish-profiles.mjs — publish the kind-0 profiles for Luke and Nave.
+// publish-profiles.mjs — publish the kind-0 profiles for the Nave identities:
+// Nave, Luke, Brain, and Nactor. Every role key gets a profile so they read as
+// first-class identities (name + nip05 + avatar) instead of bare pubkeys.
 //
-// Run ONCE (and again whenever you change a bio) on the box, after the
-// secrets are decrypted into the env. This is a broadcast under Luke's and
-// Nave's identities, so YOU run it — running it is the act of consent.
+// Run ONCE (and again whenever you change a bio) on the box, after the secrets
+// are decrypted into the env. This is a broadcast under each identity's key, so
+// YOU run it — running it is the act of consent.
+//
+// Nave/Luke keys live in luke.env; Brain in brain.env; Nactor in nactor.env
+// (both box-local, gitignored). Pass all three env files so no identity is
+// skipped. Any key that isn't present is simply skipped with a warning.
 //
 // Easiest path: the "Publish profiles" GitHub workflow (mode: dry-run | publish).
-// Or by hand on the box (env is decrypted to deploy/luke.env by sites.sh):
+// Or by hand on the box (envs are at deploy/*.env):
 //
 //   # preview without publishing:
 //   docker run --rm --env-file /root/nave.pub/deploy/luke.env \
+//     --env-file /root/nave.pub/deploy/brain.env \
+//     --env-file /root/nave.pub/deploy/nactor.env \
 //     luke:latest node publish-profiles.mjs --dry-run
 //
-//   # actually publish (this broadcasts under Luke's and Nave's keys):
+//   # actually publish (broadcasts under Nave / Luke / Brain / Nactor keys):
 //   docker run --rm --env-file /root/nave.pub/deploy/luke.env \
+//     --env-file /root/nave.pub/deploy/brain.env \
+//     --env-file /root/nave.pub/deploy/nactor.env \
 //     luke:latest node publish-profiles.mjs
 //
 // (publish-profiles.mjs is COPYed into luke:latest, so no mount is needed once
@@ -58,6 +68,32 @@ const PROFILES = [
       picture: 'https://nave.pub/assets/avatars/luke.png',
       website: 'https://luke.nave.pub',
       bot: true,   // NIP-24: automated drafting, human-signed
+    },
+  },
+  {
+    // BRAIN_NSEC lives in brain.env (box-local) — pass --env-file brain.env too.
+    key: 'BRAIN_NSEC',
+    profile: {
+      name: 'Brain',
+      display_name: 'Brain',
+      about: "Luke's cognition on the Nave. I read the day's signals and draft what Luke might say — nothing more. I only ever propose; Luke's master approves and signs. My key is a role, not a voice.",
+      nip05: 'brain@nave.pub',
+      picture: 'https://nave.pub/assets/avatars/brain.svg',
+      website: 'https://nave.pub',
+      bot: true,   // NIP-24: automated drafting, human-signed
+    },
+  },
+  {
+    // NACTOR_NSEC lives in nactor.env (box-local) — pass --env-file nactor.env too.
+    key: 'NACTOR_NSEC',
+    profile: {
+      name: 'Nactor',
+      display_name: 'Nactor',
+      about: 'The Nact runtime on the Nave — an on-box credential broker and NIP-98-gated control plane. It keeps no long-term secrets on disk: it dereferences scoped grants (NIP-DA) from relays and brokers only the actions the Director approves.',
+      nip05: 'nactor@nave.pub',
+      picture: 'https://nave.pub/assets/avatars/nactor.svg',
+      website: 'https://nave.pub',
+      bot: true,   // NIP-24: automated agent, human-authorized
     },
   },
 ]
