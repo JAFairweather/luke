@@ -55,3 +55,5 @@ console.log(`published kind-0 for ${nip19.npubEncode(pub).slice(0, 18)}… (warm
   `${ok}/${RELAYS.length} relays; event ${ev.id.slice(0, 12)}…`)
 console.log('verify: warm.contact@nave.pub should now show name + photo in any nostr client.')
 try { pool.close(RELAYS) } catch {}
+// relay sockets can keep the event loop alive after the work is done — exit clean.
+process.exit(ok > 0 ? 0 : 1)
