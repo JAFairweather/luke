@@ -21,6 +21,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
+import { resolveNactEndpoint } from './nact-resolve.mjs'
 
 const DRY = process.argv.includes('--dry-run')
 const log = (...a) => console.log(...a)
@@ -33,6 +34,11 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY?.trim()
 // NIP-98 auth to the broker; it is NOT a posting key. Both unset → direct call
 // with ANTHROPIC_API_KEY (the pre-migration path), so this is non-breaking.
 const NACT_BROKER_URL = process.env.NACT_BROKER_URL?.trim()   // e.g. http://nactor:8791/api
+// AD-2: address Nact by IDENTITY, not a URL. If NACT_IDENTITY is set (npub or
+// nactor@nave.pub) and no explicit URL is given, resolve the endpoint from the
+// Nactor's published advert. The URL still wins when set (fast on-box path);
+// identity is the discovery fallback for off-box callers. See nact-resolve.mjs.
+const NACT_IDENTITY = process.env.NACT_IDENTITY?.trim()
 const BRAIN_NSEC = process.env.BRAIN_NSEC?.trim()
 const DRAFT_MODEL = process.env.DRAFT_MODEL?.trim() || 'claude-sonnet-5'
 const PROPOSE_URL = process.env.PROPOSE_URL?.trim() || 'https://luke.nave.pub/propose'
@@ -169,15 +175,24 @@ function brokerAuth(method, url, bodyStr) {
 }
 // Returns the parsed Anthropic /v1/messages response, either brokered through
 // Nactor (key stays in Nactor) or called directly (pre-migration fallback).
+let _nactBase   // resolved once per run
+async function nactBase() {
+  if (_nactBase !== undefined) return _nactBase
+  // URL wins (on-box internal, fast); else discover the endpoint from identity.
+  _nactBase = NACT_BROKER_URL ||
+    await resolveNactEndpoint({ identity: NACT_IDENTITY, relays: RELAYS, fallback: null })
+  return _nactBase
+}
 async function callAnthropic(payload) {
-  if (NACT_BROKER_URL && BRAIN_NSEC) {
-    const u = NACT_BROKER_URL.replace(/\/$/, '') + '/broker'
+  const base = (NACT_BROKER_URL || NACT_IDENTITY) && BRAIN_NSEC ? await nactBase() : null
+  if (base && BRAIN_NSEC) {
+    const u = base.replace(/\/$/, '') + '/broker'
     const body = JSON.stringify({ provider: 'anthropic', path: '/v1/messages', method: 'POST', body: payload })
     const r = await fetch(u, { method: 'POST', headers: { authorization: brokerAuth('POST', u, body), 'content-type': 'application/json' }, body })
     if (!r.ok) throw new Error(`broker anthropic ${r.status}: ${await r.text().catch(() => '')}`)
     return await r.json()
   }
-  if (!ANTHROPIC_API_KEY) throw new Error('no LLM path configured: set NACT_BROKER_URL + BRAIN_NSEC, or ANTHROPIC_API_KEY')
+  if (!ANTHROPIC_API_KEY) throw new Error('no LLM path configured: set NACT_BROKER_URL (or NACT_IDENTITY) + BRAIN_NSEC, or ANTHROPIC_API_KEY')
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
@@ -199,7 +214,7 @@ function fmtEngagement(e) {
 
 // --- draft via Anthropic ------------------------------------------------
 async function draftPosts(corpus, signals, history = { approved: [], passed: [] }) {
-  if (!NACT_BROKER_URL && !ANTHROPIC_API_KEY) throw new Error('no LLM path: set NACT_BROKER_URL + BRAIN_NSEC, or ANTHROPIC_API_KEY')
+  if (!NACT_BROKER_URL && !NACT_IDENTITY && !ANTHROPIC_API_KEY) throw new Error('no LLM path: set NACT_BROKER_URL (or NACT_IDENTITY) + BRAIN_NSEC, or ANTHROPIC_API_KEY')
   const system = `You draft short nostr posts for two identities on "the Nave": \
 "nave" (the project's voice) and "luke" (a delegated agent). Follow this voice corpus EXACTLY:\n\n${corpus}\n\n\
 You will receive today's signals. Propose AT MOST ${MAX_POSTS} posts — fewer is better; propose zero if the \
