@@ -241,9 +241,12 @@ Return ONLY a JSON array, no prose, no code fence. Each element:\n\
       (history.passed.length ? `Recently PASSED (proposed, not approved — do NOT re-propose these or close variants):\n${history.passed.map(t => `- "${t}"`).join('\n')}` : '')
     ) : '')
 
-  const j = await callAnthropic({ model: DRAFT_MODEL, max_tokens: 1400, system, messages: [{ role: 'user', content: user }] })
+  const j = await callAnthropic({ model: DRAFT_MODEL, max_tokens: 4000, system, messages: [{ role: 'user', content: user }] })
   const text = (j.content || []).map(c => c.text || '').join('').trim()
-  const jsonStr = text.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
+  // Tolerate markdown fences and any prose around the array: take the outermost
+  // [...] span. (Also raised max_tokens above so the array can't truncate.)
+  const s = text.indexOf('['), e = text.lastIndexOf(']')
+  const jsonStr = (s !== -1 && e > s) ? text.slice(s, e + 1) : text.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
   let arr; try { arr = JSON.parse(jsonStr) } catch { throw new Error(`model did not return JSON:\n${text}`) }
   return Array.isArray(arr) ? arr : []
 }
