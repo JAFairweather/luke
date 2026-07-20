@@ -146,6 +146,22 @@ async function sendCard(id, { identity, text, rationale }) {
   })
 }
 
+// Register the Telegram webhook so approval taps actually reach
+// /telegram/webhook. Runs on boot and is idempotent (Telegram overwrites). This
+// is what keeps approvals alive across a bot/token change: without it, Telegram
+// keeps pushing callbacks to a stale URL/bot and every tap silently vanishes.
+// Registered via the broker as the SAME bot that sends the cards (telegram-nactjaf),
+// so send-bot and receive-webhook are always the same identity.
+const WEBHOOK_URL = process.env.LUKE_WEBHOOK_URL?.trim() || 'https://luke.nave.pub/telegram/webhook'
+export async function registerWebhook() {
+  if (!(BOT || NACT_BROKER_URL) || !APPROVER) { console.log('  webhook: skipped (telegram not configured)'); return false }
+  const body = { url: WEBHOOK_URL, allowed_updates: ['callback_query'] }
+  if (WEBHOOK_SECRET) body.secret_token = WEBHOOK_SECRET
+  const ok = await tg('setWebhook', body)
+  console.log(`  webhook: ${ok ? 'registered → ' + WEBHOOK_URL + (WEBHOOK_SECRET ? ' (secret set)' : '') : 'FAILED — approval taps will not arrive'}`)
+  return ok
+}
+
 // --- POST /propose : the brain hands us a draft --------------------------
 export async function handlePropose(req, res, raw) {
   if (!verifyProposeAuth(req, raw)) return json(res, 401, { why: 'unauthorized — sign NIP-98 as brain, or present the propose token' })

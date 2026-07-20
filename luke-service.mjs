@@ -15,7 +15,7 @@
 import { createServer } from 'node:http'
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto'
 import { generateSecretKey, getPublicKey, nip19, verifyEvent } from 'nostr-tools'
-import { handlePropose, handleTelegramWebhook, posterStatus } from './luke-poster.mjs'
+import { handlePropose, handleTelegramWebhook, posterStatus, registerWebhook } from './luke-poster.mjs'
 import { handleConsole } from './luke-console.mjs'
 import { handleCockpitSkin } from './luke-skin.mjs'
 import { handleReveal } from './luke-reveal.mjs'
@@ -274,4 +274,7 @@ server.listen(PORT, () => {
   const ps = posterStatus()
   console.log(`  poster: ${ps.ready ? `ready — [${ps.identities.join(', ')}], ${ps.relays} relays` : 'idle (set TELEGRAM_BOT_TOKEN, TELEGRAM_APPROVER_ID, PROPOSE_TOKEN, role nsecs)'}`)
   console.log(`  listening on :${PORT}  (card /, health /health, gate /gate/*, propose /propose)\n`)
+  // Self-register the Telegram webhook so approval taps reach us — the fix for
+  // taps silently vanishing after a bot/token change. Non-fatal on failure.
+  registerWebhook().catch(e => console.warn(`  webhook: register threw ${e?.message || e}`))
 })
