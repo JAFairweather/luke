@@ -12,6 +12,7 @@ COPY luke-console.mjs ./
 COPY luke-skin.mjs ./
 COPY luke-reveal.mjs ./
 COPY luke-brain.mjs ./
+COPY nact-resolve.mjs ./
 COPY luke-calendar.mjs ./
 COPY luke-morning.mjs ./
 COPY publish-profiles.mjs ./
