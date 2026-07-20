@@ -157,9 +157,15 @@ export async function registerWebhook() {
   if (!(BOT || NACT_BROKER_URL) || !APPROVER) { console.log('  webhook: skipped (telegram not configured)'); return false }
   const body = { url: WEBHOOK_URL, allowed_updates: ['callback_query'] }
   if (WEBHOOK_SECRET) body.secret_token = WEBHOOK_SECRET
-  const ok = await tg('setWebhook', body)
-  console.log(`  webhook: ${ok ? 'registered → ' + WEBHOOK_URL + (WEBHOOK_SECRET ? ' (secret set)' : '') : 'FAILED — approval taps will not arrive'}`)
-  return ok
+  // Retry with backoff: on a co-deploy the broker (nactor) may not be reachable
+  // the instant we boot, so a single attempt can lose the registration to a race.
+  for (let i = 1; i <= 6; i++) {
+    const ok = await tg('setWebhook', body)
+    if (ok) { console.log(`  webhook: registered → ${WEBHOOK_URL}${WEBHOOK_SECRET ? ' (secret set)' : ''}`); return true }
+    if (i < 6) await new Promise(r => setTimeout(r, i * 2000))
+  }
+  console.log('  webhook: FAILED after retries — approval taps will not arrive')
+  return false
 }
 
 // --- POST /propose : the brain hands us a draft --------------------------
