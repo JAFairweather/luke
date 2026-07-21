@@ -30,6 +30,30 @@ await t('nip07Signer: uses injected window.nostr', async () => {
   assert.equal(await s.getPublicKey(), 'ab'.repeat(32))
 })
 
+await t('nip07Signer: enable() consent ceremony runs before first key access', async () => {
+  const calls = []
+  const win = { nostr: { enable: async () => calls.push('enable'),
+    getPublicKey: async () => { calls.push('getPublicKey'); return 'ab'.repeat(32) },
+    signEvent: async (e) => e, nip44: { encrypt: async () => 'e', decrypt: async () => 'd' } } }
+  const s = nip07Signer(win)
+  await s.getPublicKey()
+  await s.getPublicKey()   // cached — ceremony must not repeat
+  assert.deepEqual(calls, ['enable', 'getPublicKey'])
+})
+
+await t('nip07Signer: declined enable() aborts sign-in', async () => {
+  const win = { nostr: { enable: async () => { throw new Error('nope') },
+    getPublicKey: async () => 'ab'.repeat(32), signEvent: async (e) => e,
+    nip44: { encrypt: async () => 'e', decrypt: async () => 'd' } } }
+  await assert.rejects(() => nip07Signer(win).getPublicKey(), /connection declined/)
+})
+
+await t('nip07Signer: no enable() → standard lazy flow unchanged', async () => {
+  const win = { nostr: { getPublicKey: async () => 'ab'.repeat(32), signEvent: async (e) => e,
+    nip44: { encrypt: async () => 'e', decrypt: async () => 'd' } } }
+  assert.equal(await nip07Signer(win).getPublicKey(), 'ab'.repeat(32))
+})
+
 await t('nip07Signer: throws with no extension', () => {
   assert.throws(() => nip07Signer({}), /no NIP-07/)
 })
