@@ -22,7 +22,20 @@ export function nip07Signer(win = (typeof window !== 'undefined' ? window : unde
   let pub = null
   return {
     kind: 'nip07',
-    getPublicKey: async () => (pub ??= await n.getPublicKey()),
+    getPublicKey: async () => {
+      if (pub) return pub
+      // Explicit connect ceremony: extensions that expose enable() (Alby)
+      // raise their trust/permission dialog HERE — the user picks the trust
+      // level before any key or signature is requested, matching the rest of
+      // the ecosystem's connect UX (and this project's consent posture).
+      // Standard NIP-07 extensions without enable() keep their own lazy
+      // per-call prompts. A decline aborts the sign-in cleanly.
+      if (typeof n.enable === 'function') {
+        try { await n.enable() }
+        catch { throw new Error('extension connection declined') }
+      }
+      return (pub = await n.getPublicKey())
+    },
     signEvent: (e) => n.signEvent(e),
     nip44Encrypt: (pk, pt) => n.nip44.encrypt(pk, pt),
     nip44Decrypt: (pk, ct) => n.nip44.decrypt(pk, ct),
