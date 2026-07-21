@@ -45,11 +45,16 @@ Safe to be public, safe to be indexed.
 
 1. Caddy guards `/cockpit*` with `forward_auth` to `luke-service`'s
    `/gate/verify`.
-2. No valid session → the gate 302s you to `/gate/login`, which asks your
-   **NIP-07 browser extension** (Alby, nos2x) to sign a NIP-98 challenge.
+2. No valid session → the gate 302s you to `/gate/login`, which signs a
+   NIP-98 challenge with any of the shared nave-connect signers: your
+   **NIP-07 browser extension** (Alby, nos2x), a **NIP-46 bunker**
+   (remote signer), or — behind an Advanced reveal — a pasted local key.
+   Three transports, one signature; the page loads its modules
+   same-origin from `/gate/vendor/*` (no CDN).
 3. The gate verifies the signature, checks the pubkey **equals your
-   configured master npub**, and — only then — sets a short-lived,
-   HttpOnly, Secure session cookie.
+   configured master npub** — the transport never widens the admit set —
+   and, only then, sets a short-lived, HttpOnly, Secure session cookie
+   (which records the transport for the audit trail).
 4. With the cookie, `forward_auth` passes and Caddy proxies to OpenClaw on
    `host.docker.internal:57419`. OpenClaw's **own** gateway auth is the
    second, inner lock (defense in depth).
