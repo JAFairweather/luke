@@ -19,6 +19,8 @@ COPY gate-vendor ./gate-vendor
 COPY luke-calendar.mjs ./
 COPY luke-morning.mjs ./
 COPY publish-profiles.mjs ./
+COPY jaf-scribe.mjs ./
+COPY nipxx.mjs ./
 COPY brief ./brief
 ENV NODE_ENV=production
 ENV LUKE_PORT=8790
