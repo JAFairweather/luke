@@ -52,10 +52,27 @@ the hours to your timezone. Each firing drafts from the last `SINCE_HOURS`
 
 > After the platform flip, swap `/root/noir/...` for `/root/nave.pub/...`.
 
+## House rules (every post)
+Three things ride on every draft, asked of the model AND enforced in code
+after it (`post-format.mjs`):
+1. **A nave.pub link** — the most specific public destination (deep links to
+   public app subdomains count; gated hosts are never offered).
+2. **A card graphic** — picked by slug from the site's card menu, fetched at
+   `CARDS_MANIFEST_URL` (default `https://nave.pub/assets/cards/manifest.json`,
+   rendered by `nave.pub/scripts/render-cards.mjs`). Manifest unreachable →
+   the built-in default card, so "always a graphic" never blocks.
+3. **Hashtags** — 1–3 lowercase topical tags in the text; never `#nostr`
+   (never tag the platform you're on); `#nave` appended if the model offers none.
+
+Replies follow the same rules by default; set `BRAIN_REPLY_PROMO=light` to
+put conversation first on replies (no forced link/graphic — the model still
+may include them where natural).
+
 ## Tuning
 - **Voice/topics:** edit `brief/voice.md` (no redeploy needed if you mount it;
   otherwise it ships in the image on next deploy).
 - **Cadence/volume:** `MAX_POSTS`, `SINCE_HOURS` in the env.
 - **Model:** `DRAFT_MODEL` (default `claude-sonnet-5`).
+- **Cards/promo:** `CARDS_MANIFEST_URL`, `BRAIN_REPLY_PROMO` (above).
 
 Nothing the brain proposes is ever posted without your Telegram tap.

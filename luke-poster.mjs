@@ -19,6 +19,7 @@ import { finalizeEvent, getPublicKey, verifyEvent, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
+import { composeContent, buildTags } from './post-format.mjs'
 
 // --- config -------------------------------------------------------------
 const RELAYS = (process.env.LUKE_RELAYS ?? 'wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net')
@@ -131,18 +132,38 @@ async function tg(method, body) {
   return r.ok
 }
 
-// Send YOU the draft as an Approve/Reject card.
-async function sendCard(id, { identity, text, rationale }) {
+// The brain may attach a card graphic; the poster only ever publishes images
+// it could host itself — the site's own cards. Anything else is dropped here,
+// so a compromised proposer can't make an approved post carry a foreign URL.
+function safeImage(img) {
+  if (!img || typeof img !== 'object') return null
+  const url = String(img.url || '')
+  if (!/^https:\/\/nave\.pub\/[\w\-./%]+\.(png|jpe?g|webp|gif)$/i.test(url)) return null
+  return { url, alt: String(img.alt || '').slice(0, 200) || null, slug: String(img.slug || '') || null }
+}
+
+// Send YOU the draft as an Approve/Reject card — WITH the graphic when the
+// draft carries one, so the tap approves exactly what the feed will show.
+async function sendCard(id, { identity, text, rationale, image }) {
   const idn = IDENTITIES[identity]
   const head = `📝 <b>Draft as ${identity}@nave.pub</b>\n<code>${idn.npub.slice(0, 16)}…</code>`
   const why = rationale ? `\n\n<i>${esc(rationale)}</i>` : ''
   const body = `${head}\n\n${esc(text)}${why}`
+  const keyboard = { inline_keyboard: [[
+    { text: '✅ Approve & post', callback_data: `ok:${id}` },
+    { text: '❌ Reject', callback_data: `no:${id}` },
+  ]] }
+  if (image?.url) {
+    // Telegram caps photo captions at 1024 chars — posts never approach it,
+    // but degrade by truncation rather than a failed send if one ever does.
+    const caption = body.length > 1024 ? body.slice(0, 1020) + '…' : body
+    const ok = await tg('sendPhoto', { chat_id: APPROVER, photo: image.url, caption, parse_mode: 'HTML', reply_markup: keyboard })
+    if (ok) return true
+    console.warn('  ⚠ sendPhoto failed — falling back to a text card')
+  }
   return tg('sendMessage', {
-    chat_id: APPROVER, text: body, parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: [[
-      { text: '✅ Approve & post', callback_data: `ok:${id}` },
-      { text: '❌ Reject', callback_data: `no:${id}` },
-    ]] },
+    chat_id: APPROVER, text: image?.url ? `${body}\n\n🖼 ${image.url}` : body, parse_mode: 'HTML',
+    reply_markup: keyboard,
   })
 }
 
@@ -179,9 +200,10 @@ export async function handlePropose(req, res, raw) {
   if (!(BOT || NACT_BROKER_URL) || !APPROVER) return json(res, 503, { why: 'telegram not configured' })
   gc()
   const id = shortId()
-  pending.set(id, { identity, text, replyTo: d.replyTo || null, rationale: d.rationale || null, created: Date.now() })
+  const image = safeImage(d.image)
+  pending.set(id, { identity, text, replyTo: d.replyTo || null, rationale: d.rationale || null, image, created: Date.now() })
   savePending()
-  const sent = await sendCard(id, { identity, text, rationale: d.rationale })
+  const sent = await sendCard(id, { identity, text, rationale: d.rationale, image })
   if (!sent) { pending.delete(id); savePending(); return json(res, 502, { why: 'telegram send failed' }) }
   return json(res, 200, { ok: true, id, status: 'awaiting-approval' })
 }
@@ -198,12 +220,19 @@ export async function handleTelegramWebhook(req, res, raw) {
   const fromId = String(cq.from?.id || '')
   const data = cq.data || ''
   const answer = (text) => tg('answerCallbackQuery', { callback_query_id: cq.id, text })
-  const editDone = (mark) => tg('editMessageText', {
-    chat_id: cq.message.chat.id, message_id: cq.message.message_id,
-    // esc() the original (Telegram returns it as plain text) so a draft with
-    // < or & can't break HTML parse; mark carries the only live HTML tags.
-    text: `${esc(cq.message.text)}\n\n${mark}`, parse_mode: 'HTML',
-  })
+  // Photo cards carry the draft in the CAPTION; text cards in .text — Telegram
+  // has a separate edit method for each and rejects the other.
+  const editDone = (mark) => cq.message.photo
+    ? tg('editMessageCaption', {
+        chat_id: cq.message.chat.id, message_id: cq.message.message_id,
+        caption: `${esc(cq.message.caption || '')}\n\n${mark}`, parse_mode: 'HTML',
+      })
+    : tg('editMessageText', {
+        chat_id: cq.message.chat.id, message_id: cq.message.message_id,
+        // esc() the original (Telegram returns it as plain text) so a draft with
+        // < or & can't break HTML parse; mark carries the only live HTML tags.
+        text: `${esc(cq.message.text)}\n\n${mark}`, parse_mode: 'HTML',
+      })
 
   if (APPROVER && fromId !== APPROVER) { await answer('Not authorized.'); return }
   const [verb, id] = data.split(':')
@@ -225,11 +254,19 @@ export async function handleTelegramWebhook(req, res, raw) {
 }
 
 const pool = new SimplePool()
-async function signAndBroadcast({ identity, text, replyTo }) {
+// For a reply, fetch the note being answered so the event can thread properly
+// (NIP-10 root/reply markers) and p-tag its author — the p tag is what makes
+// the reply NOTIFY the person; without it we were whispering into the void.
+async function fetchParent(id) {
+  try { return (await pool.querySync(RELAYS, { ids: [id] }, { maxWait: 3000 }))[0] || null }
+  catch { return null }
+}
+async function signAndBroadcast({ identity, text, replyTo, image }) {
   const { sk } = IDENTITIES[identity]
-  const tags = []
-  if (replyTo) tags.push(['e', replyTo, '', 'root'])
-  const evt = finalizeEvent({ kind: 1, created_at: Math.floor(Date.now() / 1000), tags, content: text }, sk)
+  const parent = replyTo ? await fetchParent(replyTo) : null
+  const content = composeContent(text, image?.url)   // image URL last → clients render it inline
+  const tags = buildTags({ content, imageUrl: image?.url, imageAlt: image?.alt, replyTo, parent })
+  const evt = finalizeEvent({ kind: 1, created_at: Math.floor(Date.now() / 1000), tags, content }, sk)
   const results = await Promise.allSettled(pool.publish(RELAYS, evt))
   const seen = results.filter(r => r.status === 'fulfilled').length
   if (seen === 0) throw new Error('no relay accepted the event')
