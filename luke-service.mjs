@@ -193,9 +193,10 @@ const LOGIN = shell(`${NAME} — prove your key`, `
   <div class="kick">The cockpit gate</div>
   <h1>Master?</h1>
   <div class="mandate">Sign with ${NAME}'s master key to enter.</div>
-  <button class="btn" id="go">Sign &amp; enter →</button>
-  <div class="note">Uses your NIP-07 browser extension (Alby, nos2x). Nothing is sent
-    anywhere but a one-time signature proving you hold the master key.</div>
+  <label class="lbl">Browser extension — Alby</label>
+  <button class="btn" id="go" style="margin-top:0">Sign in with Alby →</button>
+  <div class="note" id="extnote">Your NIP-07 extension (Alby, or nos2x) signs one challenge.
+    Nothing is sent anywhere but that one-time signature proving you hold the master key.</div>
   <div class="sep">or</div>
   <label class="lbl" for="bunker">Remote signer (NIP-46 bunker)</label>
   <div class="pair">
@@ -239,6 +240,12 @@ const LOGIN = shell(`${NAME} — prove your key`, `
   const busy = (btn, on, label) => { btn.disabled = on; if (label) btn.textContent = label; };
 
   // --- NIP-07 (extension) -------------------------------------------------
+  // Alby injects window.nostr a beat after load; check at load AND on click so
+  // a slow inject flips the note back without a refresh.
+  if (!window.nostr) setTimeout(() => {
+    if (!window.nostr) el('extnote').textContent =
+      'No signing extension detected in this browser — install Alby (getalby.com), or use the bunker below.';
+  }, 400);
   el('go').onclick = async () => {
     err.textContent = '';
     if (!window.nostr) { err.textContent = 'No NIP-07 extension found (install Alby or nos2x).'; return; }
