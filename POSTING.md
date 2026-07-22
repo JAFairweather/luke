@@ -26,6 +26,14 @@ broadcasts. Keys never leave the box; nothing is posted without your tap.
 
 - **The brain never holds a key.** It can only *propose*. Your tap is the
   authorization; the box does the signing.
+- **What the tap approves is what the feed shows.** A draft that carries a
+  card graphic arrives in Telegram as a photo card (the caption is the post);
+  on approve, the note publishes with the image URL on its last line, a
+  NIP-92 `imeta` tag, and a lowercase `t` tag per hashtag so hashtag feeds
+  surface it. Replies fetch the parent note first and thread properly
+  (NIP-10 root/reply markers + a `p` tag on its author, so the person
+  actually gets notified). The poster only ever attaches images hosted at
+  `https://nave.pub/` — foreign URLs from a compromised proposer are dropped.
 - **Only you can approve.** The webhook checks the tapper's Telegram ID
   against `TELEGRAM_APPROVER_ID`.
 - **Nvoy** is the data broker that grants the brain scoped access to your

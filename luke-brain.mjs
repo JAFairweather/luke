@@ -22,6 +22,7 @@ import { createHash } from 'node:crypto'
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
+import { ensureSiteLink, ensureHashtags, extractHashtags, hasSiteLink } from './post-format.mjs'
 
 const DRY = process.argv.includes('--dry-run')
 const log = (...a) => console.log(...a)
@@ -60,6 +61,29 @@ const MAX_POSTS = Number(process.env.MAX_POSTS ?? 3)
 const BRAIN_LEDGER = process.env.BRAIN_LEDGER?.trim()
 const LEDGER_KEEP = Number(process.env.LEDGER_KEEP ?? 80)          // cap entries
 const LEDGER_LOOKBACK_DAYS = Number(process.env.LEDGER_LOOKBACK_DAYS ?? 21)
+// The Director's standing rule for every outbound post: a nave.pub link, a
+// relevant card graphic, appropriate hashtags. The card menu is fetched from
+// the site itself (manifest.json ships with the cards) so adding a card never
+// needs a brain redeploy; if the fetch fails we still satisfy "always a
+// graphic" with the built-in default. BRAIN_REPLY_PROMO=light relaxes the
+// link+graphic rule on REPLIES only (conversation first) — default 'full'.
+const CARDS_MANIFEST_URL = process.env.CARDS_MANIFEST_URL?.trim() || 'https://nave.pub/assets/cards/manifest.json'
+const REPLY_PROMO = (process.env.BRAIN_REPLY_PROMO?.trim() || 'full').toLowerCase()
+const DEFAULT_CARD = {
+  slug: 'nave', url: 'https://nave.pub/assets/cards/nave.png',
+  alt: 'Nave — a room on the open internet that no one can take from you',
+  use: 'default — general Nave posts, or when nothing more specific fits',
+}
+// Public destinations the model may deep-link (never the gated hosts).
+const PUBLIC_LINKS = [
+  'https://nave.pub — the room itself (default)',
+  'https://nvoy.nave.pub — Nvoy, the delegation console',
+  'https://notegate.nave.pub — Notegate, the serverless tip line',
+  'https://nact.nave.pub — Nact, agents that act with keys that stay home',
+  'https://noir.nave.pub — Noir, the spycraft game',
+  'https://nvelope.nave.pub — Nvelope', 'https://nontact.nave.pub — Nontact',
+  'https://nherit.nave.pub — Nherit', 'https://nscope.nave.pub — Nscope',
+]
 
 const sinceSec = Math.floor(Date.now() / 1000) - SINCE_HOURS * 3600
 const sinceISO = new Date(sinceSec * 1000).toISOString()
@@ -202,6 +226,24 @@ async function callAnthropic(payload) {
   return await r.json()
 }
 
+// --- card menu (the "always a graphic" rule) ----------------------------
+// Fetch the manifest the site publishes next to the cards. Shape:
+//   { "cards": [{ "slug", "url", "alt", "use" }, …] }
+// Any failure → the built-in default card alone, so drafting never blocks on
+// the site and every post still carries a graphic.
+async function loadCards() {
+  try {
+    const r = await fetch(CARDS_MANIFEST_URL, { headers: { 'user-agent': 'luke-brain' } })
+    if (!r.ok) throw new Error(`${r.status}`)
+    const j = await r.json()
+    const cards = (j.cards || []).filter(c => c.slug && c.url && /^https:\/\/nave\.pub\//.test(c.url))
+    return cards.length ? cards : [DEFAULT_CARD]
+  } catch (e) {
+    log(`  ⚠ card manifest unavailable (${e.message}) — using the default card only`)
+    return [DEFAULT_CARD]
+  }
+}
+
 // Render one engagement item for the prompt, with an icon per kind and the
 // "on:" context (the text of our note it references).
 function fmtEngagement(e) {
@@ -213,23 +255,37 @@ function fmtEngagement(e) {
 }
 
 // --- draft via Anthropic ------------------------------------------------
-async function draftPosts(corpus, signals, history = { approved: [], passed: [] }) {
+async function draftPosts(corpus, signals, history = { approved: [], passed: [] }, cards = [DEFAULT_CARD]) {
   if (!NACT_BROKER_URL && !NACT_IDENTITY && !ANTHROPIC_API_KEY) throw new Error('no LLM path: set NACT_BROKER_URL (or NACT_IDENTITY) + BRAIN_NSEC, or ANTHROPIC_API_KEY')
   const system = `You draft short nostr posts for two identities on "the Nave": \
 "nave" (the project's voice) and "luke" (a delegated agent). Follow this voice corpus EXACTLY:\n\n${corpus}\n\n\
 You will receive today's signals. Propose AT MOST ${MAX_POSTS} posts — fewer is better; propose zero if the \
 signals are thin. Each post must stand alone, sound like the corpus (no hype, no emoji spam), and be genuinely \
-worth posting. Write channel-appropriately — use what a channel's readers expect and skip what they wouldn't. \
-You are drafting for nostr right now: NEVER add a #nostr hashtag (on nostr it reads like #twitter on Twitter — the \
-same tag could be right on a different platform like Twitter/X, but here it is noise). Never tag the platform you \
-are posting on, and on nostr use any hashtag only when it genuinely aids discovery. \
+worth posting.\n\n\
+CRAFT — what makes a post worth a stranger's three seconds: the FIRST LINE is the hook — a concrete claim, a \
+number, a tension, never a warm-up ("we've been thinking about…" is a delete). One idea per post; the specific \
+beats the general ("revoked a key and watched 300 grants re-issue themselves" beats "working on revocation"). \
+Ship the receipt: when a signal shows something real happening, point at it. End where a reader can act — the \
+link to walk through, or a question you genuinely want answered (never engagement-bait you don't care about).\n\n\
+HOUSE RULES — every post carries all three, woven in so they read as part of the post, not a footer:\n\
+1. LINK: exactly one nave.pub link — the most specific PUBLIC destination for the idea (menu below). Never \
+invent other paths, never link anything else.\n\
+2. GRAPHIC: set "image" to the slug of the most relevant card from the CARD MENU. The graphic rides with the \
+post, so don't describe it in the text.\n\
+3. HASHTAGS: 1–3 lowercase topical hashtags IN the text (final line, or woven in where natural). Tags people \
+actually follow — #privacy #opensource #bitcoin #ai #agents #devstr — plus #nave when it fits. NEVER #nostr \
+(on nostr it reads like #twitter on Twitter; never tag the platform you are posting on) and no tag piles.\n\n\
+LINK MENU (public only):\n${PUBLIC_LINKS.map(l => `- ${l}`).join('\n')}\n\n\
+CARD MENU (slug — when to use):\n${cards.map(c => `- ${c.slug} — ${c.use || c.alt || ''}`).join('\n')}\n\n\
 For an engagement follow-up, reply ONLY to a "reply" item (it has an id) — set "replyTo" to that id \
 and pick the identity that was engaged with. Zaps/reposts/reactions are resonance signals to learn from, \
-not things to reply to. Use the "on:" context to answer what was actually said.\n\n\
+not things to reply to. Use the "on:" context to answer what was actually said. In a reply, the conversation \
+comes first: answer the person plainly, and place the link/hashtags only where they serve the reader.\n\n\
 If a "Your memory" section is present, honor it as a hard rule: never re-propose a PASSED item or a close \
 variant of one (your human already declined it), and don't repeat an APPROVED item verbatim — match its register, move the idea forward.\n\n\
 Return ONLY a JSON array, no prose, no code fence. Each element:\n\
-{"identity":"nave"|"luke","text":"the post","rationale":"one line: why this, for your human approver","replyTo":"<event id or omit>"}`
+{"identity":"nave"|"luke","text":"the post (link + hashtags included)","image":"<card slug>",\
+"rationale":"one line: why this, for your human approver","replyTo":"<event id or omit>"}`
 
   const user = `TODAY'S SIGNALS (window: last ${SINCE_HOURS}h)\n\n` +
     `## Ecosystem shipping (recent commits)\n${signals.shipping.length ? signals.shipping.map(s => `- [${s.repo}] ${s.msg}`).join('\n') : '(nothing notable)'}\n\n` +
@@ -265,7 +321,7 @@ function proposeAuth(url, bodyStr) {
   return PROPOSE_TOKEN ? { authorization: `Bearer ${PROPOSE_TOKEN}` } : {}
 }
 async function propose(p) {
-  const bodyStr = JSON.stringify({ identity: p.identity, text: p.text, rationale: p.rationale, replyTo: p.replyTo || null })
+  const bodyStr = JSON.stringify({ identity: p.identity, text: p.text, rationale: p.rationale, replyTo: p.replyTo || null, image: p.image || null })
   const r = await fetch(PROPOSE_URL, {
     method: 'POST',
     headers: { ...proposeAuth(PROPOSE_URL, bodyStr), 'content-type': 'application/json' },
@@ -318,10 +374,10 @@ if (!corpus) log('  ⚠ brief/voice.md not found — drafting without the voice 
 const pks = pubkeys()
 
 log(`\n  luke-brain — gathering signals (last ${SINCE_HOURS}h)…`)
-const [shipping, substack, engagement, published] = await Promise.all([
-  signalShipping(), signalSubstack(), signalEngagement(pks), fetchOwnPublished(pks),
+const [shipping, substack, engagement, published, cards] = await Promise.all([
+  signalShipping(), signalSubstack(), signalEngagement(pks), fetchOwnPublished(pks), loadCards(),
 ])
-log(`  shipping: ${shipping.length} commits · substack: ${substack.length} posts · engagement: ${engagement.length} notes`)
+log(`  shipping: ${shipping.length} commits · substack: ${substack.length} posts · engagement: ${engagement.length} notes · cards: ${cards.length}`)
 
 // P3: reconcile the continuity ledger — mark past proposals that got published
 // (you approved them), and derive the approved/passed feedback for the prompt.
@@ -329,12 +385,31 @@ const ledger = await readLedger()
 const history = reconcile(ledger, published)
 if (BRAIN_LEDGER) log(`  memory: ${ledger.length} in ledger · ${history.approved.length} approved · ${history.passed.length} passed`)
 
-const candidates = await draftPosts(corpus, { shipping, substack, engagement }, history)
+const candidates = await draftPosts(corpus, { shipping, substack, engagement }, history, cards)
 log(`  drafted ${candidates.length} candidate(s)\n`)
+
+// House-rule enforcement — deterministic, after the model: the prompt asks,
+// this GUARANTEES. Every non-reply post leaves here with a nave.pub link,
+// ≥1 hashtag, and a resolved card; replies too unless BRAIN_REPLY_PROMO=light.
+const bySlug = new Map(cards.map(c => [c.slug, c]))
+for (const p of candidates) {
+  const lightReply = p.replyTo && REPLY_PROMO === 'light'
+  if (!lightReply) {
+    p.text = ensureHashtags(ensureSiteLink(p.text))
+    const card = bySlug.get(p.image) || bySlug.get('nave') || DEFAULT_CARD
+    p.image = { slug: card.slug, url: card.url, alt: card.alt || card.slug }
+  } else {
+    // Conversation first: keep whatever the model chose to include, resolve a
+    // card only if it named one, and never bolt promo onto a reply.
+    const card = p.image && bySlug.get(p.image)
+    p.image = card ? { slug: card.slug, url: card.url, alt: card.alt || card.slug } : null
+  }
+}
 
 for (const [i, p] of candidates.entries()) {
   log(`  [${i + 1}] as ${p.identity}${p.replyTo ? ' (reply)' : ''}: ${p.text}`)
   log(`      ↳ ${p.rationale || ''}`)
+  log(`      ⚙ card: ${p.image ? p.image.slug : '(none — light reply)'} · tags: ${extractHashtags(p.text).map(t => '#' + t).join(' ') || '(none)'} · link: ${hasSiteLink(p.text) ? '✓' : '—'}`)
   if (DRY) continue
   // Phase 2: the brain authenticates /propose with its NIP-98 `brain` signature
   // (BRAIN_NSEC); the shared PROPOSE_TOKEN is only a pre-migration fallback. Gate
