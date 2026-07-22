@@ -10,17 +10,30 @@ only propose.
      │
      ▼
   luke-brain.mjs
-     ├─ read brief/voice.md               (voice & themes — your steering wheel)
+     ├─ read brief/shared.md              (substance + house rules — every voice)
      ├─ GitHub commits + key-doc excerpts  (what shipped, and what it means)
      ├─ Substack RSS — titles AND bodies    (the essays, not just headlines)
-     ├─ nostr engagement on Luke & Nave    (replies to follow up on)
-     ├─ Anthropic API → draft ≤3 posts as JSON
+     ├─ nostr engagement, split by which identity it landed on
+     │
+     ├─ pass 1 ─ as nave ─ shared.md + brief/nave.md ─┐
+     ├─ pass 2 ─ as luke ─ shared.md + brief/luke.md ─┤
+     │                                                ▼
+     │                        interleave, cap at MAX_POSTS
      └─ POST each → https://luke.nave.pub/propose  → 📱 your Telegram
 ```
 
-Everything it reads is public — no calendar, no inbox. The "personal signal"
-is **`brief/voice.md`**, which you edit by hand (themes, tidbits, focus). That
-file is the fastest lever on what Luke sounds like and talks about.
+**One pass per identity, and a pass never sees another identity's steering.**
+The identity is fixed by the caller and stamped on the result, so the model is
+never asked to pick a voice. (It used to be a single call over one combined
+corpus — which is how two distinct voices quietly average into one.) Each pass
+also gets only the engagement that landed on *it*, and only its own approval
+history.
+
+A voice returning **zero** posts is a valid run, not a failure.
+
+Everything it reads is public — no calendar, no inbox. The "personal signal" is
+**`brief/`**, which you edit by hand. See [`brief/README.md`](brief/README.md)
+for what each file is and where its voice was derived from.
 
 ## Prereqs
 The brain needs these in the encrypted env (`secrets.enc.env`):
@@ -69,11 +82,16 @@ put conversation first on replies (no forced link/graphic — the model still
 may include them where natural).
 
 ## Tuning
-- **Voice/topics:** edit `brief/voice.md` (no redeploy needed if you mount it;
-  otherwise it ships in the image on next deploy). This corpus is fed whole and
-  is treated as *substance to reason with*, not just a style sheet — its themes
-  and focus areas steer what Luke actually thinks about.
-- **Cadence/volume:** `MAX_POSTS`, `SINCE_HOURS` in the env.
+- **Topics/substance:** edit `brief/shared.md` — themes, focus areas, house
+  rules, fed to every voice. This is the fastest lever on relevance.
+- **How one identity sounds:** edit `brief/nave.md` or `brief/luke.md`. Only
+  that identity's pass reads it. Both are fed whole and treated as *substance to
+  reason with*, not just a style sheet.
+- Either way: no redeploy needed if you mount `brief/`; otherwise it ships in the
+  image on the next deploy.
+- **Cadence/volume:** `MAX_POSTS`, `SINCE_HOURS` in the env. `MAX_POSTS` is the
+  run total; each voice gets `ceil(MAX_POSTS / voices)` and a quiet voice yields
+  its share to a talkative one.
 - **Model:** `DRAFT_MODEL` (default `claude-opus-4-8`). Depth is the goal and
   drafting runs only twice a day, so the strongest model is the default; set
   `DRAFT_MODEL` to a cheaper model for lower-cost or A/B runs.

@@ -84,11 +84,13 @@ curl -s https://luke.nave.pub/propose \
 You should get a Telegram card. Tap **✅ Approve & post** → it publishes and
 the card updates to “✅ Posted · note1… · N relays.” Reject discards it.
 
-## The brain (next)
+## The brain
 A scheduled Claude routine, twice daily, that gathers the four signals,
-drafts 1–3 candidates, and POSTs each to `/propose`. It reads a themes/voice
-corpus (`brief/voice.md`) so proposals sound like you and Nave, not like a
-changelog. Built separately once this loop is verified.
+drafts 1–3 candidates, and POSTs each to `/propose`. It runs **one drafting pass
+per identity** — each reading `brief/shared.md` plus its own voice file and never
+another's — so Nave sounds like the project, Luke sounds like Luke, and neither
+sounds like a changelog. See [`brief/README.md`](brief/README.md) and
+[`BRAIN.md`](BRAIN.md).
 
 ## `/propose` contract
 `POST /propose`  ·  `Authorization: Bearer <PROPOSE_TOKEN>`

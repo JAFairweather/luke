@@ -5,6 +5,9 @@
   "type": "module",
   "description": "Luke — a nostr-delegated agent and the nostr-signed gate to an OpenClaw cockpit.",
   "main": "luke-service.mjs",
-  "scripts": { "start": "node luke-service.mjs" },
+  "scripts": {
+    "start": "node luke-service.mjs",
+    "test": "for f in *.test.mjs; do echo \"── $f\"; node \"$f\" || exit 1; done"
+  },
   "dependencies": { "nostr-tools": "^2.0.0" }
 }
