@@ -10,8 +10,8 @@
 //
 // Signals (all public — no private data):
 //   • themes/voice corpus   brief/voice.md
-//   • ecosystem shipping     recent commits across the nave repos (GitHub)
-//   • Substack               your blog's RSS
+//   • ecosystem shipping     recent commits + a key-doc excerpt per shipping repo (GitHub)
+//   • Substack               your blog's RSS — titles AND body excerpts of recent posts
 //   • nostr engagement       replies/reactions on Luke & Nave (relays)
 //
 //   node luke-brain.mjs --dry-run     # gather + draft + print, don't propose
@@ -41,7 +41,10 @@ const NACT_BROKER_URL = process.env.NACT_BROKER_URL?.trim()   // e.g. http://nac
 // identity is the discovery fallback for off-box callers. See nact-resolve.mjs.
 const NACT_IDENTITY = process.env.NACT_IDENTITY?.trim()
 const BRAIN_NSEC = process.env.BRAIN_NSEC?.trim()
-const DRAFT_MODEL = process.env.DRAFT_MODEL?.trim() || 'claude-sonnet-5'
+// Default to the strongest model — depth is the goal, and drafting runs only
+// twice a day so the cost is negligible. DRAFT_MODEL still overrides (cheaper
+// runs, A/B). This is a config constant, not a claim in any post.
+const DRAFT_MODEL = process.env.DRAFT_MODEL?.trim() || 'claude-opus-4-8'
 const PROPOSE_URL = process.env.PROPOSE_URL?.trim() || 'https://luke.nave.pub/propose'
 const PROPOSE_TOKEN = process.env.PROPOSE_TOKEN?.trim()
 const GH_OWNER = process.env.GITHUB_OWNER?.trim() || 'JAFairweather'
@@ -99,25 +102,66 @@ function pubkeys() {
   return out
 }
 
+// --- signal helper: HTML/markdown → plain text -------------------------
+// Flatten RSS bodies and README markdown into readable text for the excerpts
+// we feed the model. Strips script/style, comments, markdown images/badges,
+// and any remaining tags; decodes the common entities; collapses whitespace.
+// Deliberately lossy — we want the gist, not fidelity.
+const htmlToText = html => String(html || '')
+  .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+  .replace(/<!--[\s\S]*?-->/g, ' ')
+  .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')             // markdown images / badge rows
+  .replace(/<[^>]+>/g, ' ')                           // any remaining tags
+  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&#39;|&rsquo;|&apos;/g, "'").replace(/&quot;|&ldquo;|&rdquo;/g, '"').replace(/&hellip;/g, '…')
+  .replace(/&#[xX]([0-9a-fA-F]+);/g, (_, h) => { try { return String.fromCodePoint(parseInt(h, 16)) } catch { return ' ' } })
+  .replace(/&#(\d+);/g, (_, n) => { try { return String.fromCodePoint(+n) } catch { return ' ' } })
+  .replace(/\s+/g, ' ').trim()
+
 // --- signal: ecosystem shipping (GitHub, unauthenticated) ---------------
+// The significant repos whose top doc is worth pulling so the model grasps
+// what a commit MEANS conceptually, not just its one-line subject. A doc is
+// fetched ONLY for a repo that actually shipped in the window (see below).
+const DOC_REPOS = new Set(['nave.pub', 'nostr-scoped-data-grants', 'nvoy', 'warm.contact', 'luke'])
+// Pull ~600 chars of a repo's canonical top doc (its README) via the GitHub
+// API. Best-effort: any failure returns null and drafting proceeds without it.
+async function fetchRepoDoc(repo) {
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GH_OWNER}/${repo}/readme`,
+      { headers: { 'accept': 'application/vnd.github+json', 'user-agent': 'luke-brain' } })
+    if (!r.ok) return null
+    const j = await r.json()
+    const raw = j.encoding === 'base64' ? Buffer.from(j.content || '', 'base64').toString('utf8') : String(j.content || '')
+    const text = htmlToText(raw).slice(0, 600)
+    return text ? { repo, text } : null
+  } catch { return null }
+}
 async function signalShipping() {
-  const items = []
+  const commits = []
+  const shipped = new Set()                           // repos with real (non-merge) commits in-window
   for (const repo of REPOS) {
     try {
       const r = await fetch(`https://api.github.com/repos/${GH_OWNER}/${repo}/commits?since=${sinceISO}&per_page=10`,
         { headers: { 'accept': 'application/vnd.github+json', 'user-agent': 'luke-brain' } })
       if (!r.ok) continue
-      const commits = await r.json()
-      for (const c of commits) {
+      const list = await r.json()
+      for (const c of list) {
         const msg = (c.commit?.message || '').split('\n')[0]
-        if (msg && !/^Merge /.test(msg)) items.push({ repo, msg })
+        if (msg && !/^Merge /.test(msg)) { commits.push({ repo, msg }); shipped.add(repo) }
       }
     } catch { /* skip a repo that errors */ }
   }
-  return items
+  // Enrich only the significant repos that actually shipped — parallel,
+  // best-effort; a doc that fails to load is simply dropped, never blocks.
+  const docs = (await Promise.all([...shipped].filter(r => DOC_REPOS.has(r)).map(fetchRepoDoc))).filter(Boolean)
+  return { commits, docs }
 }
 
 // --- signal: Substack RSS ----------------------------------------------
+// The master's essays ARE the bigger thoughts, so pull the post BODY, not just
+// the title: <content:encoded> (the full post) preferred, <description> as a
+// fallback, flattened to text. The 1–2 most recent posts get an ~1200-char
+// excerpt so the model reasons from real material instead of a headline.
 async function signalSubstack() {
   try {
     const r = await fetch(SUBSTACK_FEED, { headers: { 'user-agent': 'luke-brain' } })
@@ -128,9 +172,18 @@ async function signalSubstack() {
       const block = m[1]
       const pick = tag => (block.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`)) || [])[1]?.trim()
       const title = pick('title'), link = pick('link'), date = pick('pubDate')
-      if (title && date && new Date(date).getTime() > Date.now() - 3 * 864e5) items.push({ title, link })
+      if (title && date && new Date(date).getTime() > Date.now() - 3 * 864e5) {
+        // content:encoded is Substack's full post HTML; description is a summary.
+        items.push({ title, link, date, body: pick('content:encoded') || pick('description') || '' })
+      }
     }
-    return items
+    // Newest first, then attach a plain-text excerpt to the 1–2 freshest essays.
+    items.sort((a, b) => new Date(b.date) - new Date(a.date))
+    for (const it of items.slice(0, 2)) {
+      const text = htmlToText(it.body)
+      if (text) it.excerpt = text.length > 1200 ? text.slice(0, 1200) + '…' : text
+    }
+    return items.map(({ title, link, excerpt }) => ({ title, link, excerpt }))
   } catch { return [] }
 }
 
@@ -257,16 +310,28 @@ function fmtEngagement(e) {
 // --- draft via Anthropic ------------------------------------------------
 async function draftPosts(corpus, signals, history = { approved: [], passed: [] }, cards = [DEFAULT_CARD]) {
   if (!NACT_BROKER_URL && !NACT_IDENTITY && !ANTHROPIC_API_KEY) throw new Error('no LLM path: set NACT_BROKER_URL (or NACT_IDENTITY) + BRAIN_NSEC, or ANTHROPIC_API_KEY')
-  const system = `You draft short nostr posts for two identities on "the Nave": \
-"nave" (the project's voice) and "luke" (a delegated agent). Follow this voice corpus EXACTLY:\n\n${corpus}\n\n\
-You will receive today's signals. Propose AT MOST ${MAX_POSTS} posts — fewer is better; propose zero if the \
-signals are thin. Each post must stand alone, sound like the corpus (no hype, no emoji spam), and be genuinely \
-worth posting.\n\n\
-CRAFT — what makes a post worth a stranger's three seconds: the FIRST LINE is the hook — a concrete claim, a \
-number, a tension, never a warm-up ("we've been thinking about…" is a delete). One idea per post; the specific \
-beats the general ("revoked a key and watched 300 grants re-issue themselves" beats "working on revocation"). \
-Ship the receipt: when a signal shows something real happening, point at it. End where a reader can act — the \
-link to walk through, or a question you genuinely want answered (never engagement-bait you don't care about).\n\n\
+  const system = `You draft nostr posts for two identities on "the Nave": \
+"nave" (the project's voice) and "luke" (a delegated agent). The corpus below is BOTH how we sound AND what we \
+think about — treat its themes (D=F, user-owned data, agentic-but-on-a-leash, the Nact broker pattern) and \
+focus areas as substance to reason WITH, not merely a style sheet. Follow it closely:\n\n${corpus}\n\n\
+You will receive today's signals — commits (with short doc excerpts of what shipped), the master's own essays \
+(with body excerpts), and engagement. Propose UP TO ${MAX_POSTS} posts; propose zero only if there is genuinely \
+nothing worth saying. Do NOT ration when the material is rich — one developed thought is worth more than three \
+thin ones. Each post must stand alone, sound like the corpus (no hype, no emoji spam), and earn its place.\n\n\
+DEPTH — the point of this run. At least one candidate MUST be a genuinely DEVELOPED thought: 2–5 sentences that \
+make a real argument or share a real insight, drawn from the substance in the signals and the corpus. Reach for \
+the interesting IDEA inside the material — the tension a design decision resolves, the principle an essay is \
+circling, why a change matters beyond the fact that it landed — instead of announcing that work happened. \
+"We shipped revocation" is a changelog line; "revocation is just rotation seen from the other side — you don't \
+delete access, you move the lock and let the old keys fall away" is a thought worth a stranger's time. Mine the \
+Substack excerpts and the doc excerpts for these; that is where the bigger thinking already lives. Short, sharp \
+posts are still welcome in the mix — but the SET as a whole must not read as headlines.\n\n\
+CRAFT: no warm-ups — "we've been thinking about…" is a delete; open on the concrete (a claim, a number, a \
+tension). The specific beats the general ("revoked a key and watched 300 grants re-issue themselves" beats \
+"working on revocation"). One idea per post — but "one idea" can be a single line OR a developed paragraph; let \
+the idea set its length, not a word budget. When a signal points at something real, ground the thought in it. \
+End where a reader can go deeper — a link to walk through, or a question you actually want answered (never \
+engagement-bait you don't care about).\n\n\
 HOUSE RULES — every post carries all three, woven in so they read as part of the post, not a footer:\n\
 1. LINK: exactly one nave.pub link — the most specific PUBLIC destination for the idea (menu below). Never \
 invent other paths, never link anything else.\n\
@@ -288,8 +353,9 @@ Return ONLY a JSON array, no prose, no code fence. Each element:\n\
 "rationale":"one line: why this, for your human approver","replyTo":"<event id or omit>"}`
 
   const user = `TODAY'S SIGNALS (window: last ${SINCE_HOURS}h)\n\n` +
-    `## Ecosystem shipping (recent commits)\n${signals.shipping.length ? signals.shipping.map(s => `- [${s.repo}] ${s.msg}`).join('\n') : '(nothing notable)'}\n\n` +
-    `## New Substack posts\n${signals.substack.length ? signals.substack.map(s => `- ${s.title} — ${s.link}`).join('\n') : '(none)'}\n\n` +
+    `## Ecosystem shipping (recent commits)\n${signals.shipping.commits.length ? signals.shipping.commits.map(s => `- [${s.repo}] ${s.msg}`).join('\n') : '(nothing notable)'}\n\n` +
+    (signals.shipping.docs.length ? `## What those repos are (key-doc excerpts — grasp the concept behind the commits, don't just restate them)\n${signals.shipping.docs.map(d => `### ${d.repo}\n${d.text}`).join('\n\n')}\n\n` : '') +
+    `## New Substack posts — the master's essays (mine the excerpt for the bigger thought; never just echo a title)\n${signals.substack.length ? signals.substack.map(s => `- ${s.title} — ${s.link}${s.excerpt ? `\n  excerpt: ${s.excerpt}` : ''}`).join('\n\n') : '(none)'}\n\n` +
     `## Engagement on Luke & Nave (zaps & replies first)\n${signals.engagement.length ? signals.engagement.map(fmtEngagement).join('\n') : '(none)'}` +
     ((history.approved.length || history.passed.length) ? (
       `\n\n## Your memory — learn from your human's taps\n` +
@@ -377,7 +443,7 @@ log(`\n  luke-brain — gathering signals (last ${SINCE_HOURS}h)…`)
 const [shipping, substack, engagement, published, cards] = await Promise.all([
   signalShipping(), signalSubstack(), signalEngagement(pks), fetchOwnPublished(pks), loadCards(),
 ])
-log(`  shipping: ${shipping.length} commits · substack: ${substack.length} posts · engagement: ${engagement.length} notes · cards: ${cards.length}`)
+log(`  shipping: ${shipping.commits.length} commits (+${shipping.docs.length} doc excerpts) · substack: ${substack.length} posts (${substack.filter(s => s.excerpt).length} w/ body) · engagement: ${engagement.length} notes · cards: ${cards.length}`)
 
 // P3: reconcile the continuity ledger — mark past proposals that got published
 // (you approved them), and derive the approved/passed feedback for the prompt.

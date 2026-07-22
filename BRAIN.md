@@ -11,8 +11,8 @@ only propose.
      ▼
   luke-brain.mjs
      ├─ read brief/voice.md               (voice & themes — your steering wheel)
-     ├─ GitHub commits across nave repos   (what shipped)
-     ├─ Substack RSS                       (new blog posts)
+     ├─ GitHub commits + key-doc excerpts  (what shipped, and what it means)
+     ├─ Substack RSS — titles AND bodies    (the essays, not just headlines)
      ├─ nostr engagement on Luke & Nave    (replies to follow up on)
      ├─ Anthropic API → draft ≤3 posts as JSON
      └─ POST each → https://luke.nave.pub/propose  → 📱 your Telegram
@@ -70,9 +70,19 @@ may include them where natural).
 
 ## Tuning
 - **Voice/topics:** edit `brief/voice.md` (no redeploy needed if you mount it;
-  otherwise it ships in the image on next deploy).
+  otherwise it ships in the image on next deploy). This corpus is fed whole and
+  is treated as *substance to reason with*, not just a style sheet — its themes
+  and focus areas steer what Luke actually thinks about.
 - **Cadence/volume:** `MAX_POSTS`, `SINCE_HOURS` in the env.
-- **Model:** `DRAFT_MODEL` (default `claude-sonnet-5`).
+- **Model:** `DRAFT_MODEL` (default `claude-opus-4-8`). Depth is the goal and
+  drafting runs only twice a day, so the strongest model is the default; set
+  `DRAFT_MODEL` to a cheaper model for lower-cost or A/B runs.
+- **Signal depth:** the brain feeds the model real material, not headlines — the
+  **body** of recent Substack posts (`<content:encoded>`, ~1200-char excerpts),
+  plus a short **key-doc excerpt** (README) for the significant repos that
+  shipped in-window. Both are best-effort and never block drafting. The prompt
+  asks for at least one genuinely *developed* thought per run, not just
+  one-liners. Same knobs: `SUBSTACK_FEED`, `NAVE_REPOS`.
 - **Cards/promo:** `CARDS_MANIFEST_URL`, `BRAIN_REPLY_PROMO` (above).
 
 Nothing the brain proposes is ever posted without your Telegram tap.
