@@ -9,3 +9,13 @@ secrets.env
 !secrets.enc.env
 
 node_modules/
+
+# Stray SSH keypairs. A ssh-keygen answered "y" at the overwrite prompt writes
+# the private key to a file literally named `y` in the cwd — which is how one
+# ended up in this working tree. The repo is public, so one `git add -A` would
+# publish it. Broad patterns so it can't recur under another name.
+id_ed25519*
+id_rsa*
+*.pem
+/y
+/y.pub

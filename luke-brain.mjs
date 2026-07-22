@@ -8,8 +8,14 @@
 // broker — that key cannot post as luke/nave, so the approve-before-post
 // property is unchanged.)
 //
+// Each identity drafts in ITS OWN voice from ITS OWN steering file. There is one
+// LLM pass per identity, and a pass sees `brief/shared.md` + its own file and
+// NEVER another identity's — the model no longer picks which hat to wear, so the
+// two voices cannot regress toward each other. See brief/README.md.
+//
 // Signals (all public — no private data):
-//   • themes/voice corpus   brief/voice.md
+//   • shared substance       brief/shared.md   (themes, focus areas, house rules)
+//   • per-identity voice     brief/nave.md, brief/luke.md
 //   • ecosystem shipping     recent commits + a key-doc excerpt per shipping repo (GitHub)
 //   • Substack               your blog's RSS — titles AND body excerpts of recent posts
 //   • nostr engagement       replies/reactions on Luke & Nave (relays)
@@ -23,6 +29,7 @@ import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
 import { ensureLinks, ensureHashtags, extractHashtags, hasApexLink, mentionedApps, htmlToText } from './post-format.mjs'
+import { VOICES, voiceHeader, engagementTarget, splitBudget, interleave, normText, reconcile } from './voices.mjs'
 
 const DRY = process.argv.includes('--dry-run')
 const log = (...a) => console.log(...a)
@@ -195,6 +202,10 @@ function zapSender(e) {
 async function signalEngagement(pks) {
   const authors = Object.values(pks); if (!authors.length) return []
   const ours = new Set(authors)
+  // Reverse map so every engagement item can say WHICH of our identities it
+  // landed on — that's what lets each identity's drafting pass see only the
+  // conversations it is actually part of.
+  const whoIs = Object.fromEntries(Object.entries(pks).map(([name, pk]) => [pk, name]))
   const pool = new SimplePool()
   try {
     const events = await pool.querySync(RELAYS,
@@ -202,18 +213,22 @@ async function signalEngagement(pks) {
     // Fetch OUR notes being engaged with, so each item carries what it's about.
     const refIds = new Set()
     for (const e of events) for (const t of e.tags) if (t[0] === 'e' && t[1]) refIds.add(t[1])
-    const refText = {}
+    const ref = {}
     if (refIds.size) {
       const notes = await pool.querySync(RELAYS, { ids: [...refIds].slice(0, 50) }, { maxWait: 4000 })
-      for (const n of notes) if (ours.has(n.pubkey)) refText[n.id] = (n.content || '').replace(/\s+/g, ' ').slice(0, 160)
+      for (const n of notes) if (ours.has(n.pubkey)) ref[n.id] = { text: (n.content || '').replace(/\s+/g, ' ').slice(0, 160), to: whoIs[n.pubkey] }
     }
-    const ctxOf = e => { const id = (e.tags.filter(t => t[0] === 'e').pop() || [])[1]; return id ? refText[id] || null : null }
+    const refOf = e => { const id = (e.tags.filter(t => t[0] === 'e').pop() || [])[1]; return (id && ref[id]) || null }
+    // Attribution: the author of the note being engaged with is the truth when we
+    // could fetch it; otherwise fall back to the p-tag that names one of ours.
+    const toOf = e => engagementTarget(e, whoIs, refOf(e)?.to)
+    const ctxOf = e => refOf(e)?.text || null
     const items = events.flatMap(e => {
-      if (e.kind === 9735) { const sats = zapSats(e); return [{ kind: 'zap', by: shortNpub(zapSender(e)), sats, ctx: ctxOf(e) }] }
+      if (e.kind === 9735) { const sats = zapSats(e); return [{ kind: 'zap', by: shortNpub(zapSender(e)), sats, ctx: ctxOf(e), to: toOf(e) }] }
       if (ours.has(e.pubkey)) return []                       // our own note/repost/reaction — skip
-      if (e.kind === 7) return [{ kind: 'reaction', by: shortNpub(e.pubkey), text: (e.content || '+').slice(0, 16), ctx: ctxOf(e) }]
-      if (e.kind === 6) return [{ kind: 'repost', by: shortNpub(e.pubkey), ctx: ctxOf(e) }]
-      return [{ kind: 'reply', id: e.id, by: shortNpub(e.pubkey), text: (e.content || '').replace(/\s+/g, ' ').slice(0, 240), ctx: ctxOf(e) }]
+      if (e.kind === 7) return [{ kind: 'reaction', by: shortNpub(e.pubkey), text: (e.content || '+').slice(0, 16), ctx: ctxOf(e), to: toOf(e) }]
+      if (e.kind === 6) return [{ kind: 'repost', by: shortNpub(e.pubkey), ctx: ctxOf(e), to: toOf(e) }]
+      return [{ kind: 'reply', id: e.id, by: shortNpub(e.pubkey), text: (e.content || '').replace(/\s+/g, ' ').slice(0, 240), ctx: ctxOf(e), to: toOf(e) }]
     })
     // Zaps first (by size), then replies (repliable), then reposts, then reactions.
     const rank = { zap: 0, reply: 1, repost: 2, reaction: 3 }
@@ -295,18 +310,21 @@ function fmtEngagement(e) {
 }
 
 // --- draft via Anthropic ------------------------------------------------
-async function draftPosts(corpus, signals, history = { approved: [], passed: [] }, cards = [DEFAULT_CARD]) {
+// ONE identity per call. `steering` is that identity's own file; `shared` is the
+// substance every drafter gets. The identity is fixed by the caller and stamped
+// on the result — the model is never asked to choose a voice, which is the whole
+// point: a pass cannot borrow the register of an identity it cannot see.
+async function draftFor(identity, { shared, steering }, signals, history = { approved: [], passed: [] }, cards = [DEFAULT_CARD], budget = MAX_POSTS) {
   if (!NACT_BROKER_URL && !NACT_IDENTITY && !ANTHROPIC_API_KEY) throw new Error('no LLM path: set NACT_BROKER_URL (or NACT_IDENTITY) + BRAIN_NSEC, or ANTHROPIC_API_KEY')
-  const system = `You draft nostr posts for two identities on "the Nave": \
-"nave" (the project's voice) and "luke" (a delegated agent). The corpus below is BOTH how we sound AND what we \
-think about — treat its themes (D=F, user-owned data, agentic-but-on-a-leash, the Nact broker pattern) and \
-focus areas as substance to reason WITH, not merely a style sheet. Follow it closely:\n\n${corpus}\n\n\
+  const system = voiceHeader(identity, { shared, steering }) +
+    `Treat the throughlines and focus areas as substance to reason WITH, not merely a style sheet.\n\n\
 You will receive today's signals — commits (with short doc excerpts of what shipped), the master's own essays \
-(with body excerpts), and engagement. Propose UP TO ${MAX_POSTS} posts; propose zero only if there is genuinely \
-nothing worth saying. Do NOT ration when the material is rich — one developed thought is worth more than three \
-thin ones. Each post must stand alone, sound like the corpus (no hype, no emoji spam), and earn its place.\n\n\
+(with body excerpts), and engagement. Propose UP TO ${budget} post(s); propose ZERO if there is genuinely \
+nothing worth saying in this voice today — silence is a valid answer and a thin post is worse than none. \
+Do NOT ration when the material is rich — one developed thought is worth more than three thin ones. Each post \
+must stand alone, sound like the steering above (no hype, no emoji spam), and earn its place.\n\n\
 DEPTH — the point of this run. At least one candidate MUST be a genuinely DEVELOPED thought: 2–5 sentences that \
-make a real argument or share a real insight, drawn from the substance in the signals and the corpus. Reach for \
+make a real argument or share a real insight, drawn from the substance in the signals and the steering. Reach for \
 the interesting IDEA inside the material — the tension a design decision resolves, the principle an essay is \
 circling, why a change matters beyond the fact that it landed — instead of announcing that work happened. \
 "We shipped revocation" is a changelog line; "revocation is just rotation seen from the other side — you don't \
@@ -331,21 +349,23 @@ actually follow — #privacy #opensource #bitcoin #ai #agents #devstr — plus #
 (on nostr it reads like #twitter on Twitter; never tag the platform you are posting on) and no tag piles.\n\n\
 LINK MENU (public only):\n${PUBLIC_LINKS.map(l => `- ${l}`).join('\n')}\n\n\
 CARD MENU (slug — when to use):\n${cards.map(c => `- ${c.slug} — ${c.use || c.alt || ''}`).join('\n')}\n\n\
-For an engagement follow-up, reply ONLY to a "reply" item (it has an id) — set "replyTo" to that id \
-and pick the identity that was engaged with. Zaps/reposts/reactions are resonance signals to learn from, \
+For an engagement follow-up, reply ONLY to a "reply" item (it has an id) — set "replyTo" to that id. Every \
+engagement item you are shown landed on ${identity}, so the reply is yours to make; do not reply on another \
+identity's behalf. Zaps/reposts/reactions are resonance signals to learn from, \
 not things to reply to. Use the "on:" context to answer what was actually said. In a reply, the conversation \
 comes first: answer the person plainly, and place the link/hashtags only where they serve the reader.\n\n\
 If a "Your memory" section is present, honor it as a hard rule: never re-propose a PASSED item or a close \
 variant of one (your human already declined it), and don't repeat an APPROVED item verbatim — match its register, move the idea forward.\n\n\
-Return ONLY a JSON array, no prose, no code fence. Each element:\n\
-{"identity":"nave"|"luke","text":"the post (link + hashtags included)","image":"<card slug>",\
+Return ONLY a JSON array, no prose, no code fence. Omit it entirely — return [] — if nothing is worth saying. \
+Each element:\n\
+{"text":"the post (link + hashtags included)","image":"<card slug>",\
 "rationale":"one line: why this, for your human approver","replyTo":"<event id or omit>"}`
 
   const user = `TODAY'S SIGNALS (window: last ${SINCE_HOURS}h)\n\n` +
     `## Ecosystem shipping (recent commits)\n${signals.shipping.commits.length ? signals.shipping.commits.map(s => `- [${s.repo}] ${s.msg}`).join('\n') : '(nothing notable)'}\n\n` +
     (signals.shipping.docs.length ? `## What those repos are (key-doc excerpts — grasp the concept behind the commits, don't just restate them)\n${signals.shipping.docs.map(d => `### ${d.repo}\n${d.text}`).join('\n\n')}\n\n` : '') +
     `## New Substack posts — the master's essays (mine the excerpt for the bigger thought; never just echo a title)\n${signals.substack.length ? signals.substack.map(s => `- ${s.title} — ${s.link}${s.excerpt ? `\n  excerpt: ${s.excerpt}` : ''}`).join('\n\n') : '(none)'}\n\n` +
-    `## Engagement on Luke & Nave (zaps & replies first)\n${signals.engagement.length ? signals.engagement.map(fmtEngagement).join('\n') : '(none)'}` +
+    `## Engagement on ${identity} (zaps & replies first — these all landed on you)\n${signals.engagement.length ? signals.engagement.map(fmtEngagement).join('\n') : '(none)'}` +
     ((history.approved.length || history.passed.length) ? (
       `\n\n## Your memory — learn from your human's taps\n` +
       (history.approved.length ? `Recently APPROVED (published — this is what lands; echo the register, don't repeat verbatim):\n${history.approved.map(t => `- "${t}"`).join('\n')}\n` : '') +
@@ -359,7 +379,10 @@ Return ONLY a JSON array, no prose, no code fence. Each element:\n\
   const s = text.indexOf('['), e = text.lastIndexOf(']')
   const jsonStr = (s !== -1 && e > s) ? text.slice(s, e + 1) : text.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
   let arr; try { arr = JSON.parse(jsonStr) } catch { throw new Error(`model did not return JSON:\n${text}`) }
-  return Array.isArray(arr) ? arr : []
+  if (!Array.isArray(arr)) return []
+  // Stamp the identity here rather than trusting the model to echo it, and hold
+  // the pass to its budget — a pass cannot spend another identity's share.
+  return arr.slice(0, budget).map(p => ({ ...p, identity }))
 }
 
 // --- propose ------------------------------------------------------------
@@ -387,7 +410,8 @@ async function propose(p) {
 }
 
 // --- continuity ledger (P3) ---------------------------------------------
-const normText = s => (s || '').toLowerCase().replace(/https?:\/\/\S+/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
+// normText comes from voices.mjs — the ledger and the reconcile that reads it
+// must normalize identically or nothing ever matches as published.
 const draftHash = (identity, text) => sha256hex(`${identity}\n${normText(text)}`)
 async function readLedger() {
   if (!BRAIN_LEDGER) return []
@@ -414,18 +438,20 @@ async function fetchOwnPublished(pks) {
 // Reconcile the ledger against what's now published, and derive the two
 // feedback lists for the prompt: recently APPROVED (published) and PASSED
 // (proposed a while ago, never published → you tapped no / let it lapse).
-function reconcile(ledger, publishedNorm) {
-  const pub = new Set(publishedNorm)
-  const nowSec = Math.floor(Date.now() / 1000)
-  for (const e of ledger) if (!e.published && pub.has(normText(e.text))) e.published = true
-  const approved = ledger.filter(e => e.published).slice(-8).map(e => e.text)
-  const passed = ledger.filter(e => !e.published && (nowSec - (e.at || 0)) > 2 * 86400).slice(-8).map(e => e.text)
-  return { approved, passed }
-}
+// (reconcile lives in voices.mjs — it's pure, and its per-identity scoping is
+// the memory half of the voice split, tested in voices.test.mjs.)
 
 // --- run ----------------------------------------------------------------
-const corpus = await readFile(new URL('./brief/voice.md', import.meta.url), 'utf8').catch(() => '')
-if (!corpus) log('  ⚠ brief/voice.md not found — drafting without the voice corpus')
+// VOICES (from voices.mjs) are the identities this brain drafts for, each with
+// its own steering file. Adding a voice is adding a file — no prompt surgery.
+const readBrief = f => readFile(new URL(`./brief/${f}`, import.meta.url), 'utf8').catch(() => '')
+
+const shared = await readBrief('shared.md')
+if (!shared) log('  ⚠ brief/shared.md not found — drafting without the shared substance')
+const steeringOf = Object.fromEntries(await Promise.all(
+  VOICES.map(async v => [v, await readBrief(`${v}.md`)])))
+for (const v of VOICES) if (!steeringOf[v]) log(`  ⚠ brief/${v}.md not found — ${v} would draft with no voice; skipping it`)
+
 const pks = pubkeys()
 
 log(`\n  luke-brain — gathering signals (last ${SINCE_HOURS}h)…`)
@@ -437,11 +463,28 @@ log(`  shipping: ${shipping.commits.length} commits (+${shipping.docs.length} do
 // P3: reconcile the continuity ledger — mark past proposals that got published
 // (you approved them), and derive the approved/passed feedback for the prompt.
 const ledger = await readLedger()
-const history = reconcile(ledger, published)
-if (BRAIN_LEDGER) log(`  memory: ${ledger.length} in ledger · ${history.approved.length} approved · ${history.passed.length} passed`)
 
-const candidates = await draftPosts(corpus, { shipping, substack, engagement }, history, cards)
-log(`  drafted ${candidates.length} candidate(s)\n`)
+// One pass per identity: its own steering, its own engagement, its own memory.
+// Passes are independent, so a voice with nothing to say returns [] without
+// costing the other one its turn.
+const active = VOICES.filter(v => steeringOf[v])
+const perVoice = splitBudget(MAX_POSTS, active.length)
+const unattributed = engagement.filter(e => !e.to).length
+if (unattributed) log(`  note: ${unattributed} engagement item(s) couldn't be attributed to an identity — not offered for reply`)
+
+const drafted = await Promise.all(active.map(async v => {
+  const mine = engagement.filter(e => e.to === v)
+  const history = reconcile(ledger, published, v)
+  if (BRAIN_LEDGER) log(`  memory[${v}]: ${history.approved.length} approved · ${history.passed.length} passed · engagement: ${mine.length}`)
+  const out = await draftFor(v, { shared, steering: steeringOf[v] }, { shipping, substack, engagement: mine }, history, cards, perVoice)
+  log(`  ${v}: ${out.length} candidate(s)${out.length ? '' : ' — nothing worth saying in this voice today'}`)
+  return out
+}))
+
+// Interleave before capping so one talkative voice can't crowd the other out of
+// the run; a voice that stayed silent simply yields its share.
+const candidates = interleave(drafted, MAX_POSTS)
+log(`  drafted ${candidates.length} candidate(s) across ${active.length} identit${active.length === 1 ? 'y' : 'ies'}\n`)
 
 // House-rule enforcement — deterministic, after the model: the prompt asks,
 // this GUARANTEES. Every non-reply post leaves here with a nave.pub link,
