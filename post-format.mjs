@@ -24,6 +24,23 @@ export function ensureSiteLink(text, url = SITE_URL) {
   return hasSiteLink(t) ? t : `${t}\n\n${url}`
 }
 
+// Flatten RSS bodies and README markdown into readable text for prompt excerpts.
+// Strips script/style, comments, markdown images/badges and any remaining tags;
+// decodes the common entities; collapses whitespace. Deliberately lossy — the
+// gist, not fidelity. Shared so the brain and the scribe can't drift apart.
+export function htmlToText(html) {
+  return String(html || '')
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&#39;|&rsquo;|&apos;/g, "'").replace(/&quot;|&ldquo;|&rdquo;/g, '"').replace(/&hellip;/g, '\u2026')
+    .replace(/&#[xX]([0-9a-fA-F]+);/g, (_, h) => { try { return String.fromCodePoint(parseInt(h, 16)) } catch { return ' ' } })
+    .replace(/&#(\d+);/g, (_, n) => { try { return String.fromCodePoint(+n) } catch { return ' ' } })
+    .replace(/\s+/g, ' ').trim()
+}
+
 // The APEX specifically. A subdomain deep-link does NOT satisfy this — the
 // standing rule is that nave.pub itself is always referenced, and any app the
 // post actually names carries its own link IN ADDITION.

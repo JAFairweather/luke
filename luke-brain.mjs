@@ -22,7 +22,7 @@ import { createHash } from 'node:crypto'
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
-import { ensureLinks, ensureHashtags, extractHashtags, hasApexLink, mentionedApps } from './post-format.mjs'
+import { ensureLinks, ensureHashtags, extractHashtags, hasApexLink, mentionedApps, htmlToText } from './post-format.mjs'
 
 const DRY = process.argv.includes('--dry-run')
 const log = (...a) => console.log(...a)
@@ -104,21 +104,6 @@ function pubkeys() {
   return out
 }
 
-// --- signal helper: HTML/markdown → plain text -------------------------
-// Flatten RSS bodies and README markdown into readable text for the excerpts
-// we feed the model. Strips script/style, comments, markdown images/badges,
-// and any remaining tags; decodes the common entities; collapses whitespace.
-// Deliberately lossy — we want the gist, not fidelity.
-const htmlToText = html => String(html || '')
-  .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
-  .replace(/<!--[\s\S]*?-->/g, ' ')
-  .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')             // markdown images / badge rows
-  .replace(/<[^>]+>/g, ' ')                           // any remaining tags
-  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-  .replace(/&#39;|&rsquo;|&apos;/g, "'").replace(/&quot;|&ldquo;|&rdquo;/g, '"').replace(/&hellip;/g, '…')
-  .replace(/&#[xX]([0-9a-fA-F]+);/g, (_, h) => { try { return String.fromCodePoint(parseInt(h, 16)) } catch { return ' ' } })
-  .replace(/&#(\d+);/g, (_, n) => { try { return String.fromCodePoint(+n) } catch { return ' ' } })
-  .replace(/\s+/g, ' ').trim()
 
 // --- signal: ecosystem shipping (GitHub, unauthenticated) ---------------
 // The significant repos whose top doc is worth pulling so the model grasps

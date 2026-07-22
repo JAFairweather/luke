@@ -35,7 +35,7 @@ import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
 import { newScopeKey, publishScope, grant, receiveGrants, latestGrants, fetchScope } from './nipxx.mjs'
-import { extractHashtags } from './post-format.mjs'
+import { extractHashtags, ensureAppLinks, ensureLinks, mentionedApps, htmlToText } from './post-format.mjs'
 
 const DRY = process.argv.includes('--dry-run')
 const log = (...a) => console.log(...a)
@@ -45,7 +45,9 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY?.trim()
 const NACT_BROKER_URL = process.env.NACT_BROKER_URL?.trim()
 const NACT_IDENTITY = process.env.NACT_IDENTITY?.trim()
 const BRAIN_NSEC = process.env.BRAIN_NSEC?.trim()
-const DRAFT_MODEL = process.env.DRAFT_MODEL?.trim() || 'claude-sonnet-5'
+// Depth is the goal and the scribe runs on a schedule, so the strongest model
+// is the default; DRAFT_MODEL still overrides for cheaper or A/B runs.
+const DRAFT_MODEL = process.env.DRAFT_MODEL?.trim() || 'claude-opus-4-8'
 const GH_OWNER = process.env.GITHUB_OWNER?.trim() || 'JAFairweather'
 const SUBSTACK_FEED = process.env.SUBSTACK_FEED?.trim() || 'https://jafairweather.substack.com/feed'
 const SINCE_HOURS = Number(process.env.SINCE_HOURS ?? 26)          // wider net than the brain
@@ -112,9 +114,16 @@ async function signalSubstack() {
       const block = m[1]
       const pick = tag => (block.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`)) || [])[1]?.trim()
       const title = pick('title'), link = pick('link'), date = pick('pubDate')
-      if (title && date && new Date(date).getTime() > Date.now() - 7 * 864e5) items.push({ title, link })
+      // The BODY is where his bigger thoughts live — titles are headlines. Take
+      // content:encoded (fallback description), flatten to text, keep an excerpt.
+      const body = htmlToText(pick('content:encoded') || pick('description') || '')
+      if (title && date && new Date(date).getTime() > Date.now() - 7 * 864e5)
+        items.push({ title, link, at: new Date(date).getTime(),
+                     excerpt: body ? body.slice(0, 1200) + (body.length > 1200 ? '…' : '') : '' })
     }
-    return items
+    // Newest first; only the freshest couple carry excerpts into the prompt.
+    items.sort((a, b) => (b.at || 0) - (a.at || 0))
+    return items.map((it, i) => (i < 2 ? it : { ...it, excerpt: '' }))
   } catch { return [] }
 }
 
@@ -322,7 +331,14 @@ ${steer}VOICE: match his recent notes (samples in the signals). Plain, specific,
 engagement-bait, no emoji spam. A post earns its place with a concrete observation, a real question, or a \
 thing that actually happened. His range is WIDE — the platform he's building, but also everything else the \
 steering file names. Do not make every post about Nave.\n\n\
-Propose AT MOST ${MAX_DRAFTS} drafts — fewer is better; zero if nothing is genuinely worth his signature. \
+Propose UP TO ${MAX_DRAFTS} drafts — zero if nothing is genuinely worth his signature, but do NOT ration when \
+the material is rich: one developed thought is worth more than three thin ones.\n\n\
+DEPTH — the point of this run. At least one draft MUST be a genuinely DEVELOPED thought: 2-5 sentences that \
+make a real argument or share a real insight, drawn from the substance in the signals (his essay excerpts, \
+what the work actually changed). Reach for the interesting IDEA inside the material — the tension a decision \
+resolves, the principle an essay is circling, why something matters beyond the fact that it happened — \
+instead of announcing that work happened. Short, sharp posts are welcome in the mix, but the SET must not \
+read as headlines. Let the idea set the length, not a word budget. \
 Hashtags: only where they aid discovery, 0–3, lowercase, in the text; NEVER #nostr (never tag the platform \
 you post on). A nave.pub link ONLY when the post is about the Nave (deep public links fine); personal posts \
 carry no promo. "image": a card slug from the menu ONLY if the post is squarely on that card's topic — \
@@ -334,7 +350,9 @@ Return ONLY a JSON array, no prose, no code fence. Each element:\n\
 
   const user = `TODAY'S SIGNALS (last ${SINCE_HOURS}h)\n\n` +
     `## Shipping across his repos\n${signals.shipping.length ? signals.shipping.map(s => `- [${s.repo}] ${s.msg}`).join('\n') : '(quiet)'}\n\n` +
-    `## Substack (recent)\n${signals.substack.length ? signals.substack.map(s => `- ${s.title} — ${s.link}`).join('\n') : '(none)'}\n\n` +
+    `## His Substack — mine these for the bigger thought; never echo the title\n${signals.substack.length
+      ? signals.substack.map(s => `- ${s.title} — ${s.link}${s.excerpt ? `\n  excerpt: ${s.excerpt}` : ''}`).join('\n')
+      : '(none)'}\n\n` +
     `## Said to him on nostr\n${signals.nostr.toMe.length ? signals.nostr.toMe.map(e => `- ${e.by}: "${e.text}"`).join('\n') : '(quiet)'}\n\n` +
     `## His own recent notes (voice sample — do not repeat)\n${signals.nostr.mine.length ? signals.nostr.mine.map(t => `- "${t}"`).join('\n') : '(none)'}`
 
@@ -410,11 +428,17 @@ if (IS_MAIN) {
     // to {url, alt}; an unknown slug simply drops (bare post).
     p.text = String(p.text || '').replace(/#nostr\b/gi, '').replace(/[ \t]+\n/g, '\n').trim()
     if (!p.text) continue
+    // Standing link rule, applied WITHOUT turning his personal posts into ads:
+    // a draft that names an app always carries that app's link (and nave.pub
+    // with it, since it is a Nave post). A purely personal draft — no app, no
+    // Nave — stays bare; this is his own hand, not a promo channel.
+    if (mentionedApps(p.text).length) p.text = ensureLinks(p.text)
+    else if (/\bnave\b/i.test(p.text)) p.text = ensureAppLinks(ensureLinks(p.text))
     const card = p.image && bySlug.get(p.image)
     p.image = card ? { slug: card.slug, url: card.url, alt: card.alt || card.slug } : null
     log(`  [${i + 1}] (${p.topic || 'untitled'}) ${p.text}`)
     log(`      ↳ ${p.rationale || ''}`)
-    log(`      ⚙ card: ${p.image ? p.image.slug : '(bare)'} · tags: ${extractHashtags(p.text).map(t => '#' + t).join(' ') || '(none)'}`)
+    log(`      ⚙ card: ${p.image ? p.image.slug : '(bare)'} · tags: ${extractHashtags(p.text).map(t => '#' + t).join(' ') || '(none)'} · links: ${mentionedApps(p.text).map(u => u.replace('https://', '')).join(' + ') || '(bare — personal)'}`)
     if (DRY) continue
     try {
       const { scopeId, acks } = await issueDraft(p)
