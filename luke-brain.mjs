@@ -22,7 +22,7 @@ import { createHash } from 'node:crypto'
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
-import { ensureSiteLink, ensureHashtags, extractHashtags, hasSiteLink } from './post-format.mjs'
+import { ensureLinks, ensureHashtags, extractHashtags, hasApexLink, mentionedApps } from './post-format.mjs'
 
 const DRY = process.argv.includes('--dry-run')
 const log = (...a) => console.log(...a)
@@ -86,6 +86,8 @@ const PUBLIC_LINKS = [
   'https://noir.nave.pub — Noir, the spycraft game',
   'https://nvelope.nave.pub — Nvelope', 'https://nontact.nave.pub — Nontact',
   'https://nherit.nave.pub — Nherit', 'https://nscope.nave.pub — Nscope',
+  'https://ngage.nave.pub — Ngage, the sovereign posting desk',
+  'https://warm.contact — warm.contact, inbound-first contact collection',
 ]
 
 const sinceSec = Math.floor(Date.now() / 1000) - SINCE_HOURS * 3600
@@ -333,8 +335,10 @@ the idea set its length, not a word budget. When a signal points at something re
 End where a reader can go deeper — a link to walk through, or a question you actually want answered (never \
 engagement-bait you don't care about).\n\n\
 HOUSE RULES — every post carries all three, woven in so they read as part of the post, not a footer:\n\
-1. LINK: exactly one nave.pub link — the most specific PUBLIC destination for the idea (menu below). Never \
-invent other paths, never link anything else.\n\
+1. LINKS: ALWAYS reference nave.pub itself. AND if the post names a specific app — Nontact, Nvoy, Nact/Nactor, \
+Nvelope, Notegate, Ntrigue, Nherit, Nscope, Noir, Ngage, warm.contact — include THAT app's own link as well, \
+in addition to nave.pub (menu below). Never invent other paths, never link anything else, and never link the \
+gated hosts (Cockpit, Console).\n\
 2. GRAPHIC: set "image" to the slug of the most relevant card from the CARD MENU. The graphic rides with the \
 post, so don't describe it in the text.\n\
 3. HASHTAGS: 1–3 lowercase topical hashtags IN the text (final line, or woven in where natural). Tags people \
@@ -461,7 +465,7 @@ const bySlug = new Map(cards.map(c => [c.slug, c]))
 for (const p of candidates) {
   const lightReply = p.replyTo && REPLY_PROMO === 'light'
   if (!lightReply) {
-    p.text = ensureHashtags(ensureSiteLink(p.text))
+    p.text = ensureHashtags(ensureLinks(p.text))
     const card = bySlug.get(p.image) || bySlug.get('nave') || DEFAULT_CARD
     p.image = { slug: card.slug, url: card.url, alt: card.alt || card.slug }
   } else {
@@ -475,7 +479,7 @@ for (const p of candidates) {
 for (const [i, p] of candidates.entries()) {
   log(`  [${i + 1}] as ${p.identity}${p.replyTo ? ' (reply)' : ''}: ${p.text}`)
   log(`      ↳ ${p.rationale || ''}`)
-  log(`      ⚙ card: ${p.image ? p.image.slug : '(none — light reply)'} · tags: ${extractHashtags(p.text).map(t => '#' + t).join(' ') || '(none)'} · link: ${hasSiteLink(p.text) ? '✓' : '—'}`)
+  log(`      ⚙ card: ${p.image ? p.image.slug : '(none — light reply)'} · tags: ${extractHashtags(p.text).map(t => '#' + t).join(' ') || '(none)'} · links: ${[hasApexLink(p.text) ? 'nave.pub' : '—', ...mentionedApps(p.text).map(u => u.replace('https://',''))].join(' + ')}`)
   if (DRY) continue
   // Phase 2: the brain authenticates /propose with its NIP-98 `brain` signature
   // (BRAIN_NSEC); the shared PROPOSE_TOKEN is only a pre-migration fallback. Gate

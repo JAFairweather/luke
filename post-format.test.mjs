@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   hasSiteLink, ensureSiteLink, extractHashtags, ensureHashtags,
-  composeContent, imetaTag, buildTags, SITE_URL,
+  composeContent, imetaTag, buildTags, SITE_URL, mentionedApps, ensureLinks, hasApexLink,
 } from './post-format.mjs'
 
 test('hasSiteLink: root, subdomain, deep path — but not lookalikes', () => {
@@ -83,4 +83,23 @@ test('buildTags: reply to a mid-thread note — marked root + reply, author p-ta
 test('buildTags: parent fetch failed — degrade to old behavior (e root only)', () => {
   const id = 'aa'.repeat(32)
   assert.deepEqual(buildTags({ content: 'x', replyTo: id, parent: null }), [['e', id, '', 'root']])
+})
+
+test('mentionedApps: word-boundary, deduped, gated hosts absent', () => {
+  assert.deepEqual(mentionedApps('Nontact keeps contacts fresh'), ['https://nontact.nave.pub'])
+  assert.deepEqual(mentionedApps('Nact brokers it; Nactor is its runtime'), ['https://nact.nave.pub'])
+  assert.deepEqual(mentionedApps('warm.contact is inbound-first'), ['https://warm.contact'])
+  assert.deepEqual(mentionedApps('the Cockpit and Console are gated'), [])   // never public-linked
+  assert.deepEqual(mentionedApps('no apps here'), [])
+})
+
+test('ensureLinks: apex always, plus every named app, idempotent', () => {
+  const out = ensureLinks('Nontact makes the address book stop rotting.')
+  assert.ok(out.includes('https://nave.pub'), 'apex always present')
+  assert.ok(out.includes('https://nontact.nave.pub'), 'named app linked too')
+  assert.equal(ensureLinks(out), out, 'idempotent')
+  // a deep link alone does NOT satisfy the apex rule any more
+  const deep = ensureLinks('read it at https://nvoy.nave.pub')
+  assert.ok(hasApexLink(deep), 'apex appended even when a subdomain link exists')
+  assert.ok(deep.includes('https://nvoy.nave.pub'))
 })
