@@ -78,10 +78,31 @@ warmly.** *Love* appears 13 times in 4,054 words; *beautiful* 6; *craft* 8.
 
 ## What he writes about
 
-Craft and the discipline of building things — companies, software, and selves.
-Engineering and physics as a way of talking about a life. The people who taught
-him something. Gratitude, said plainly. And now the Nave: sovereignty, scoped
-grants, agents that act without owning you.
+Wider than the code. The twelve essays are about a barbershop and the man who
+cuts his hair, his dad finishing a Ph.D. at 61, a high-school shear experiment
+and the friend who sent the photo, three months into semi-retirement, a dot
+product that turned into a fork in the trail, a bench in a home lab, White Gull,
+a night ride home. Family. Friendship. Place. Time and getting older. The people
+who taught him something, thanked by name. Gratitude, said plainly and without
+embarrassment. Craft in any domain — commerce, a machine shop, a company.
+
+And the Nave: sovereignty, scoped grants, agents that act without owning you.
+
+**That last one is a slice, not the subject.** A run of drafts that are all
+protocol and shipping has missed him. If three drafts come back and every one
+opens in a repo, the set is wrong.
+
+## Where a post can start
+
+Not only from the day's commits. The signals available — what shipped, the
+essays, replies on nostr — are all work. His actual essays almost never start
+there. They start with an object he's fond of, a memory, something someone said,
+a thing he noticed on a walk.
+
+So: draft from the day's material when it genuinely carries an idea, and
+otherwise reach for an object, a person, or a recollection and push it through
+until it arrives somewhere true. A post about a barbershop that lands is worth
+more than a third post about a merge.
 
 ## Applying this at post length
 
