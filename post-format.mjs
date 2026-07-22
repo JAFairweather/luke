@@ -24,6 +24,59 @@ export function ensureSiteLink(text, url = SITE_URL) {
   return hasSiteLink(t) ? t : `${t}\n\n${url}`
 }
 
+// The APEX specifically. A subdomain deep-link does NOT satisfy this — the
+// standing rule is that nave.pub itself is always referenced, and any app the
+// post actually names carries its own link IN ADDITION.
+const APEX_RE = /https?:\/\/nave\.pub(?![\w.-])(?:\/\S*)?/i
+
+export function hasApexLink(text) {
+  return APEX_RE.test(String(text || ''))
+}
+
+// Public app surfaces only. The gated hosts (cockpit, console) and anything
+// still in design (Nops) are deliberately absent — a public post never points
+// at a sovereign-only gate. Nact and its runtime Nactor share one destination.
+export const APP_LINKS = {
+  nvoy: 'https://nvoy.nave.pub',
+  nact: 'https://nact.nave.pub',
+  nactor: 'https://nact.nave.pub',
+  nontact: 'https://nontact.nave.pub',
+  nvelope: 'https://nvelope.nave.pub',
+  notegate: 'https://notegate.nave.pub',
+  ntrigue: 'https://ntrigue.nave.pub',
+  nherit: 'https://nherit.nave.pub',
+  nscope: 'https://nscope.nave.pub',
+  noir: 'https://noir.nave.pub',
+  ngage: 'https://ngage.nave.pub',
+  'warm.contact': 'https://warm.contact',
+}
+
+// Which app destinations a post actually names. Word-boundary matched, so
+// "Nactor" doesn't trip the bare "Nact" rule and vice versa; deduped by URL.
+export function mentionedApps(text) {
+  const t = String(text || '')
+  const urls = new Set()
+  for (const [name, url] of Object.entries(APP_LINKS)) {
+    if (new RegExp(`\\b${name.replace(/\./g, '\\.')}\\b`, 'i').test(t)) urls.add(url)
+  }
+  return [...urls]
+}
+
+// Append the link for every app the post names that isn't already linked.
+// Idempotent.
+export function ensureAppLinks(text) {
+  let t = String(text || '').trimEnd()
+  for (const url of mentionedApps(t)) if (!t.includes(url)) t += `\n${url}`
+  return t
+}
+
+// The full link rule: nave.pub is ALWAYS present, and any app the post names
+// carries its own link too. This is what the drafting surfaces enforce.
+export function ensureLinks(text) {
+  const t = String(text || '').trimEnd()
+  return ensureAppLinks(hasApexLink(t) ? t : `${t}\n\n${SITE_URL}`)
+}
+
 // Hashtags as clients index them: lowercase, no '#', deduped, in order of
 // appearance. Matches letters/digits/underscore (the common client tokenizer).
 export function extractHashtags(text) {
