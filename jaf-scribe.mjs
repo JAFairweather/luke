@@ -40,7 +40,7 @@ import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
 import { newScopeKey, publishScope, grant, receiveGrants, latestGrants, fetchScope } from './nipxx.mjs'
-import { extractHashtags, ensureAppLinks, ensureLinks, mentionedApps, htmlToText } from './post-format.mjs'
+import { extractHashtags, ensureAppLinks, ensureLinks, ensureDisclosure, mentionedApps, htmlToText } from './post-format.mjs'
 
 const DRY = process.argv.includes('--dry-run')
 const log = (...a) => console.log(...a)
@@ -452,6 +452,9 @@ if (IS_MAIN) {
     // Nave — stays bare; this is his own hand, not a promo channel.
     if (mentionedApps(p.text).length) p.text = ensureLinks(p.text)
     else if (/\bnave\b/i.test(p.text)) p.text = ensureAppLinks(ensureLinks(p.text))
+    // Every scribe draft is AI-assisted content the Director will sign — the
+    // standing disclosure rides its bottom line, personal or promo alike.
+    p.text = ensureDisclosure(p.text)
     const card = p.image && bySlug.get(p.image)
     p.image = card ? { slug: card.slug, url: card.url, alt: card.alt || card.slug } : null
     log(`  [${i + 1}] (${p.topic || 'untitled'}) ${p.text}`)
