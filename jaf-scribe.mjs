@@ -21,12 +21,16 @@
 //   node jaf-scribe.mjs --dry-run     # gather + draft + print, don't issue
 //   node jaf-scribe.mjs               # also publish scopes + gift-wrap grants
 //
-// Env (all on the box already): LUKE_NSEC (issuer — signs scopes/wraps, and
-// the grantee key that opens his steering), LUKE_MASTER_NPUB (the Director —
-// grantee of drafts, publisher of steering), broker path as luke-brain
-// (NACT_BROKER_URL/NACT_IDENTITY + BRAIN_NSEC, or ANTHROPIC_API_KEY),
-// LUKE_RELAYS. Optional: MAX_DRAFTS (3), SCRIBE_LEDGER, CARDS_MANIFEST_URL,
-// STEER_DIRECTOR_NPUB (trust anchor for steering; defaults to the Director).
+// Env: QUILL_NSEC (issuer — the Quill BOX-DEVICE key; signs scopes/wraps and
+// is the grantee key that opens his steering). This is nact#26's split made
+// real: drafting-for-the-Director is Quill's job, and luke's key no longer
+// touches it — one persona, per-device keys, the box being one device
+// (quill.md §9; the Mac holds its own). Box-local quill.env, gitignored,
+// minted by deploy/ops/gen-quill-key.sh in nave.pub. Plus LUKE_MASTER_NPUB
+// (the Director — grantee of drafts, publisher of steering), broker path as
+// luke-brain (NACT_BROKER_URL/NACT_IDENTITY + BRAIN_NSEC, or
+// ANTHROPIC_API_KEY), LUKE_RELAYS. Optional: MAX_DRAFTS (3), SCRIBE_LEDGER,
+// CARDS_MANIFEST_URL, STEER_DIRECTOR_NPUB (steering trust anchor override).
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { createHash, randomBytes } from 'node:crypto'
@@ -72,7 +76,10 @@ function loadPk(raw) {
   try { return raw.startsWith('npub1') ? nip19.decode(raw).data : (/^[0-9a-f]{64}$/i.test(raw) ? raw.toLowerCase() : null) }
   catch { return null }
 }
-const LUKE_SK = loadSk(process.env.LUKE_NSEC?.trim())
+// The scribe's own identity. QUILL_NSEC only — deliberately NO fallback to
+// LUKE_NSEC: a fallback would silently reintroduce the overloaded-agent
+// condition this split exists to kill (luke ghostwriting for the Director).
+const QUILL_SK = loadSk(process.env.QUILL_NSEC?.trim())
 const MASTER_PK = loadPk(process.env.LUKE_MASTER_NPUB?.trim())
 // The steering publisher we trust. It is the same identity we grant drafts to;
 // the override exists so a drill can point at a throwaway Director.
@@ -210,7 +217,7 @@ const relay = {
 // Ngage's settings panel publishes his drafting steering as a NIP-DA
 // `steer:draft` Scoped Data Set and gift-wraps a grant of it TO THIS AGENT.
 // Identical wire to the drafts we send him, running the other way: he is the
-// publisher, luke the grantee, LUKE_NSEC the key that opens it.
+// publisher, Quill the grantee, QUILL_NSEC the key that opens it.
 //
 // PRECEDENCE — brief/jaf.md is the STANDING DEFAULT: the file he edits by hand,
 // and the whole story whenever nothing else is said. A live `steer:draft` grant
@@ -276,7 +283,7 @@ has just told you.\n\n${lines.join('\n')}\n\n`
  * past us ('stale'), missing, malformed, or simply empty. NEVER throws — every
  * failure is a quiet fall back to brief/jaf.md, never a blocked drafting run.
  */
-export async function fetchSteering(rl = relay, granteeSk = LUKE_SK, directorPk = DIRECTOR_PK) {
+export async function fetchSteering(rl = relay, granteeSk = QUILL_SK, directorPk = DIRECTOR_PK) {
   if (!granteeSk || !directorPk) return null
   try {
     const mine = (await receiveGrants(rl, granteeSk))
@@ -378,8 +385,8 @@ async function issueDraft(p) {
     image: p.image || null, rationale: p.rationale || null, topic: p.topic || null,
     proposedBy: 'luke', proposedAt: Math.floor(Date.now() / 1000),
   }
-  await publishScope(relay, LUKE_SK, { scopeId, generation: 1, scopeKey, payload })
-  const { acks } = await grant(relay, LUKE_SK, MASTER_PK,
+  await publishScope(relay, QUILL_SK, { scopeId, generation: 1, scopeKey, payload })
+  const { acks } = await grant(relay, QUILL_SK, MASTER_PK,
     { scopeId, generation: 1, scopeKey, scopeName: `draft:post/${scopeId.slice(0, 8)}` })
   return { scopeId, acks }
 }
@@ -402,13 +409,21 @@ async function saveLedger(entries) {
 const IS_MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 
 if (IS_MAIN) {
-  if (!LUKE_SK) { log('  ✗ LUKE_NSEC missing — the scribe signs scopes/wraps as luke'); process.exit(1) }
+  if (!QUILL_SK) {
+    log('  ✗ QUILL_NSEC missing — the scribe signs as QUILL, the Director-drafting')
+    log('    device key (nact#26: luke no longer ghostwrites). Mint the box device')
+    log('    key with deploy/ops/gen-quill-key.sh (nave.pub), which writes quill.env;')
+    log('    run-scribe.sh passes it in. Then add the printed npub to Ngage')
+    log('    Settings → Trusted agents and re-save steering so the grant reaches it.')
+    process.exit(1)
+  }
   if (!MASTER_PK) { log('  ✗ LUKE_MASTER_NPUB missing — no Director to grant to'); process.exit(1) }
 
   const themes = await readFile(new URL('./brief/jaf.md', import.meta.url), 'utf8').catch(() => '')
   if (!themes) log('  ⚠ brief/jaf.md not found — drafting from signals alone')
 
   log(`\n  jaf-scribe — drafting for ${nip19.npubEncode(MASTER_PK).slice(0, 13)}… (last ${SINCE_HOURS}h)`)
+  log(`  signing as quill (box device): ${nip19.npubEncode(getPublicKey(QUILL_SK)).slice(0, 20)}…`)
   // fetchSteering never throws and never blocks: worst case it returns null.
   const [shipping, substack, nostr, cards, ledger, steering] = await Promise.all([
     signalShippingWide(), signalSubstack(), signalNostr(), loadCards(), readLedger(), fetchSteering(),
