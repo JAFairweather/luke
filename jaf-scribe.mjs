@@ -21,12 +21,13 @@
 //   node jaf-scribe.mjs --dry-run     # gather + draft + print, don't issue
 //   node jaf-scribe.mjs               # also publish scopes + gift-wrap grants
 //
-// Env: QUILL_NSEC (issuer — the Quill BOX-DEVICE key; signs scopes/wraps and
-// is the grantee key that opens his steering). This is nact#26's split made
-// real: drafting-for-the-Director is Quill's job, and luke's key no longer
-// touches it — one persona, per-device keys, the box being one device
-// (quill.md §9; the Mac holds its own). Box-local quill.env, gitignored,
-// minted by deploy/ops/gen-quill-key.sh in nave.pub. Plus LUKE_MASTER_NPUB
+// Env: QUILL_NSEC (issuer — JAMES'S QUILL's key: npub13uuznpc…, the Director's
+// own reconnection-agent instance already minted + profiled in warm.contact via
+// scripts/mint-quill-identity.sh; signs scopes/wraps and opens his steering).
+// This is nact#26's split: drafting-for-the-Director is Quill's job, and luke's
+// key no longer touches it. The key is the Director's — provided by him, NEVER
+// minted by any Nave script; its sovereign home is the Mac (warm.contact#43),
+// and the box path is an opt-in interim. Plus LUKE_MASTER_NPUB
 // (the Director — grantee of drafts, publisher of steering), broker path as
 // luke-brain (NACT_BROKER_URL/NACT_IDENTITY + BRAIN_NSEC, or
 // ANTHROPIC_API_KEY), LUKE_RELAYS. Optional: MAX_DRAFTS (3), SCRIBE_LEDGER,
@@ -76,9 +77,11 @@ function loadPk(raw) {
   try { return raw.startsWith('npub1') ? nip19.decode(raw).data : (/^[0-9a-f]{64}$/i.test(raw) ? raw.toLowerCase() : null) }
   catch { return null }
 }
-// The scribe's own identity. QUILL_NSEC only — deliberately NO fallback to
-// LUKE_NSEC: a fallback would silently reintroduce the overloaded-agent
-// condition this split exists to kill (luke ghostwriting for the Director).
+// The scribe's own identity: James's Quill (npub13uuznpc…). QUILL_NSEC only —
+// deliberately NO fallback to LUKE_NSEC (a fallback would silently reintroduce
+// the overloaded-agent condition this split exists to kill), and NEVER minted
+// on the fly: James's Quill already exists, so a run without QUILL_NSEC must
+// stop, not conjure a new identity.
 const QUILL_SK = loadSk(process.env.QUILL_NSEC?.trim())
 const MASTER_PK = loadPk(process.env.LUKE_MASTER_NPUB?.trim())
 // The steering publisher we trust. It is the same identity we grant drafts to;
@@ -410,11 +413,11 @@ const IS_MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.arg
 
 if (IS_MAIN) {
   if (!QUILL_SK) {
-    log('  ✗ QUILL_NSEC missing — the scribe signs as QUILL, the Director-drafting')
-    log('    device key (nact#26: luke no longer ghostwrites). Mint the box device')
-    log('    key with deploy/ops/gen-quill-key.sh (nave.pub), which writes quill.env;')
-    log('    run-scribe.sh passes it in. Then add the printed npub to Ngage')
-    log('    Settings → Trusted agents and re-save steering so the grant reaches it.')
+    log('  ✗ QUILL_NSEC missing — the scribe signs as JAMES\'S QUILL (npub13uuznpc…),')
+    log('    the Director\'s own instance already minted in warm.contact. Its key is')
+    log('    the Director\'s and is NEVER minted here: provide it in quill.env, or run')
+    log('    Quill on the Mac where its key lives (warm.contact#43). luke no longer')
+    log('    ghostwrites for the Director (nact#26), so there is no fallback.')
     process.exit(1)
   }
   if (!MASTER_PK) { log('  ✗ LUKE_MASTER_NPUB missing — no Director to grant to'); process.exit(1) }
@@ -423,7 +426,7 @@ if (IS_MAIN) {
   if (!themes) log('  ⚠ brief/jaf.md not found — drafting from signals alone')
 
   log(`\n  jaf-scribe — drafting for ${nip19.npubEncode(MASTER_PK).slice(0, 13)}… (last ${SINCE_HOURS}h)`)
-  log(`  signing as quill (box device): ${nip19.npubEncode(getPublicKey(QUILL_SK)).slice(0, 20)}…`)
+  log(`  signing as James's Quill: ${nip19.npubEncode(getPublicKey(QUILL_SK)).slice(0, 20)}…`)
   // fetchSteering never throws and never blocks: worst case it returns null.
   const [shipping, substack, nostr, cards, ledger, steering] = await Promise.all([
     signalShippingWide(), signalSubstack(), signalNostr(), loadCards(), readLedger(), fetchSteering(),
