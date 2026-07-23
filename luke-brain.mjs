@@ -28,7 +28,7 @@ import { createHash } from 'node:crypto'
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
-import { ensureLinks, ensureHashtags, extractHashtags, hasApexLink, mentionedApps, htmlToText } from './post-format.mjs'
+import { ensureLinks, ensureHashtags, ensureDisclosure, extractHashtags, hasApexLink, mentionedApps, htmlToText } from './post-format.mjs'
 import { VOICES, voiceHeader, engagementTarget, splitBudget, interleave, normText, reconcile } from './voices.mjs'
 
 const DRY = process.argv.includes('--dry-run')
@@ -493,7 +493,7 @@ const bySlug = new Map(cards.map(c => [c.slug, c]))
 for (const p of candidates) {
   const lightReply = p.replyTo && REPLY_PROMO === 'light'
   if (!lightReply) {
-    p.text = ensureHashtags(ensureLinks(p.text))
+    p.text = ensureDisclosure(ensureHashtags(ensureLinks(p.text)))   // AI-assistance disclosure, bottom line (Director's standing rule)
     const card = bySlug.get(p.image) || bySlug.get('nave') || DEFAULT_CARD
     p.image = { slug: card.slug, url: card.url, alt: card.alt || card.slug }
   } else {
