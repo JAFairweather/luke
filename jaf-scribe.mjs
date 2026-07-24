@@ -39,7 +39,8 @@ import { pathToFileURL } from 'node:url'
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
-import { newScopeKey, publishScope, grant, receiveGrants, latestGrants, fetchScope } from './nipxx.mjs'
+import { BunkerSigner } from 'nostr-tools/nip46'
+import { newScopeKey, publishScope, grant, receiveGrants, latestGrants, fetchScope, localSigner } from './nipxx.mjs'
 import { extractHashtags, ensureAppLinks, ensureLinks, ensureDisclosure, DISCLOSURE, mentionedApps, htmlToText } from './post-format.mjs'
 
 const DRY = process.argv.includes('--dry-run')
@@ -83,6 +84,35 @@ function loadPk(raw) {
 // on the fly: James's Quill already exists, so a run without QUILL_NSEC must
 // stop, not conjure a new identity.
 const QUILL_SK = loadSk(process.env.QUILL_NSEC?.trim())
+// The scribe's SIGNER — everything downstream (publishScope/grant/steering-read)
+// goes through this, so the key can live off-box (luke#25). Two modes:
+//   • bunker (SCRIBE_SIGNER=nip46 + SCRIBE_BUNKER_URI) — a nostr-tools
+//     BunkerSigner over a scoped NIP-46 connection to Bunker46 (kinds
+//     30440/1059/13 only). The key NEVER touches this host; this is the
+//     always-on nave.pub drafter's posture, and it is a SANCTIONED run (the
+//     break-glass guard below applies only to the raw-key-on-box path).
+//   • local (default) — localSigner(QUILL_SK), the raw key in-process.
+const SCRIBE_BUNKER_URI = process.env.SCRIBE_BUNKER_URI?.trim()
+const WANTS_BUNKER = /^nip46$/i.test(process.env.SCRIBE_SIGNER || '') || (!!SCRIBE_BUNKER_URI && !QUILL_SK)
+function makeQuillSigner() {
+  if (WANTS_BUNKER) {
+    if (!SCRIBE_BUNKER_URI) return null
+    const pool = new SimplePool()
+    const clientKey = newScopeKey() // a random 32-byte key: the NIP-46 transport key, throwaway
+    let bunkerP = null
+    const ensure = () => (bunkerP ??= BunkerSigner.fromURI(clientKey, SCRIBE_BUNKER_URI, { pool }))
+    return {
+      mode: 'bunker',
+      getPublicKey: async () => (await ensure()).getPublicKey(),
+      signEvent: async (e) => (await ensure()).signEvent(e),
+      nip44Encrypt: async (pk, pt) => (await ensure()).nip44Encrypt(pk, pt),
+      nip44Decrypt: async (pk, ct) => (await ensure()).nip44Decrypt(pk, ct),
+    }
+  }
+  if (!QUILL_SK) return null
+  return Object.assign(localSigner(QUILL_SK), { mode: 'local' })
+}
+const QUILL_SIGNER = makeQuillSigner()
 const MASTER_PK = loadPk(process.env.LUKE_MASTER_NPUB?.trim())
 // The steering publisher we trust. It is the same identity we grant drafts to;
 // the override exists so a drill can point at a throwaway Director.
@@ -286,7 +316,7 @@ has just told you.\n\n${lines.join('\n')}\n\n`
  * past us ('stale'), missing, malformed, or simply empty. NEVER throws — every
  * failure is a quiet fall back to brief/jaf.md, never a blocked drafting run.
  */
-export async function fetchSteering(rl = relay, granteeSk = QUILL_SK, directorPk = DIRECTOR_PK) {
+export async function fetchSteering(rl = relay, granteeSk = QUILL_SIGNER, directorPk = DIRECTOR_PK) {
   if (!granteeSk || !directorPk) return null
   try {
     const mine = (await receiveGrants(rl, granteeSk))
@@ -388,8 +418,8 @@ async function issueDraft(p) {
     image: p.image || null, rationale: p.rationale || null, topic: p.topic || null,
     proposedBy: 'luke', proposedAt: Math.floor(Date.now() / 1000),
   }
-  await publishScope(relay, QUILL_SK, { scopeId, generation: 1, scopeKey, payload })
-  const { acks } = await grant(relay, QUILL_SK, MASTER_PK,
+  await publishScope(relay, QUILL_SIGNER, { scopeId, generation: 1, scopeKey, payload })
+  const { acks } = await grant(relay, QUILL_SIGNER, MASTER_PK,
     { scopeId, generation: 1, scopeKey, scopeName: `draft:post/${scopeId.slice(0, 8)}` })
   return { scopeId, acks }
 }
@@ -412,25 +442,26 @@ async function saveLedger(entries) {
 const IS_MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 
 if (IS_MAIN) {
-  // RETIRED 2026-07-24 (warm.contact#43): James's Quill drafts on the Mac now —
-  // `warm quill-draft`, composing where the key lives and emitting pen-direct.
-  // First light landed 2026-07-24. This entrypoint is sealed to match the box
-  // runner (nave.pub run-scribe.sh); the exported voice functions below stay —
-  // they are the shared drafting logic, still tested. Break-glass only, with an
-  // explicit choice to run the Director's key off its sovereign device.
-  if (process.env.SCRIBE_ALLOW_BOX !== '1') {
-    log('  ✗ the box scribe is RETIRED (2026-07-24). James\'s Quill drafts on the Mac')
-    log('    now (warm.contact#43) — run `warm quill-draft` there. The drafting key does')
-    log('    not belong on the box (AD-10). Break-glass only: SCRIBE_ALLOW_BOX=1.')
+  // Two sanctioned shapes now (luke#25):
+  //   • BUNKER mode (SCRIBE_SIGNER=nip46 + SCRIBE_BUNKER_URI) — the always-on
+  //     nave.pub drafter, signing as jaf-quill-bunker over a scoped NIP-46
+  //     connection. The key is NEVER on this host; this is a first-class run
+  //     (typically scheduled by Luke from OpenClaw), not break-glass.
+  //   • RAW-KEY-ON-BOX — the retired interim: only with SCRIBE_ALLOW_BOX=1,
+  //     because it places the Director's key on shared infra (AD-10 forbids it
+  //     as a default). The Mac (warm.contact#43) is the local pen.
+  if (!WANTS_BUNKER && process.env.SCRIBE_ALLOW_BOX !== '1') {
+    log('  ✗ the raw-key box scribe is RETIRED (2026-07-24). Either run it in BUNKER mode')
+    log('    (SCRIBE_SIGNER=nip46 + SCRIBE_BUNKER_URI — the key stays in Bunker46, luke#25),')
+    log('    or draft on the Mac (`warm quill-draft`, warm.contact#43). Raw key on the box')
+    log('    is break-glass only: SCRIBE_ALLOW_BOX=1.')
     process.exit(1)
   }
-  log('  ⚠ BREAK-GLASS: the box scribe is retired; running it places the Director\'s key here.')
-  if (!QUILL_SK) {
-    log('  ✗ QUILL_NSEC missing — the scribe signs as JAMES\'S QUILL (npub13uuznpc…),')
-    log('    the Director\'s own instance already minted in warm.contact. Its key is')
-    log('    the Director\'s and is NEVER minted here: provide it in quill.env, or run')
-    log('    Quill on the Mac where its key lives (warm.contact#43). luke no longer')
-    log('    ghostwrites for the Director (nact#26), so there is no fallback.')
+  if (WANTS_BUNKER) log('  ✓ BUNKER mode: signing as jaf-quill-bunker over NIP-46 — the key stays in Bunker46.')
+  else log('  ⚠ BREAK-GLASS: raw-key box scribe; this places the Director\'s key here.')
+  if (!QUILL_SIGNER) {
+    log('  ✗ no signer — set SCRIBE_SIGNER=nip46 + SCRIBE_BUNKER_URI (bunker), or QUILL_NSEC')
+    log('    (raw-key break-glass). The key is the Director\'s and is NEVER minted here.')
     process.exit(1)
   }
   if (!MASTER_PK) { log('  ✗ LUKE_MASTER_NPUB missing — no Director to grant to'); process.exit(1) }
@@ -439,7 +470,8 @@ if (IS_MAIN) {
   if (!themes) log('  ⚠ brief/jaf.md not found — drafting from signals alone')
 
   log(`\n  jaf-scribe — drafting for ${nip19.npubEncode(MASTER_PK).slice(0, 13)}… (last ${SINCE_HOURS}h)`)
-  log(`  signing as James's Quill: ${nip19.npubEncode(getPublicKey(QUILL_SK)).slice(0, 20)}…`)
+  const quillPub = await QUILL_SIGNER.getPublicKey()
+  log(`  signing as James's Quill (${QUILL_SIGNER.mode}): ${nip19.npubEncode(quillPub).slice(0, 20)}…`)
   // fetchSteering never throws and never blocks: worst case it returns null.
   const [shipping, substack, nostr, cards, ledger, steering] = await Promise.all([
     signalShippingWide(), signalSubstack(), signalNostr(), loadCards(), readLedger(), fetchSteering(),

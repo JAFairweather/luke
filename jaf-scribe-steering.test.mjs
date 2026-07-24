@@ -271,5 +271,25 @@ await t('a read-path failure logs and skips — it never blocks a drafting run',
   assert.deepEqual(promptFor(s), BASELINE)
 })
 
+// Bunker parity (luke#25): the read-path works through a SIGNER exposing only
+// the async interface (no raw key) — exactly a NIP-46 BunkerSigner. So the
+// always-on nave.pub drafter reads the Director's steering identically, key
+// living in Bunker46.
+await t('the read-path works through a remote signer (no raw key) — bunker parity', async () => {
+  const relay = new MemRelay(), director = mk(), scribe = mk()
+  await publishSteering(relay, director, scribe.pub, STEERING)
+  const local = localSigner(scribe.sk)
+  const remoteSigner = {
+    getPublicKey: async () => local.getPublicKey(),
+    signEvent: async e => local.signEvent(e),
+    nip44Encrypt: async (pk, pt) => local.nip44Encrypt(pk, pt),
+    nip44Decrypt: async (pk, ct) => local.nip44Decrypt(pk, ct),
+  }
+  const viaKey = await fetchSteering(relay, scribe.sk, director.pub)
+  const viaSigner = await fetchSteering(relay, remoteSigner, director.pub)
+  assert.ok(viaSigner && viaSigner.voice === STEERING.voice, 'the signer reads the steering')
+  assert.deepEqual(viaSigner, viaKey, 'byte-for-byte identical to the raw-key read')
+})
+
 console.log(`\n${pass}/${n} passed`)
 process.exit(pass === n ? 0 : 1)
