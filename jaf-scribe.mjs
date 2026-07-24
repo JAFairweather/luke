@@ -412,6 +412,19 @@ async function saveLedger(entries) {
 const IS_MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 
 if (IS_MAIN) {
+  // RETIRED 2026-07-24 (warm.contact#43): James's Quill drafts on the Mac now —
+  // `warm quill-draft`, composing where the key lives and emitting pen-direct.
+  // First light landed 2026-07-24. This entrypoint is sealed to match the box
+  // runner (nave.pub run-scribe.sh); the exported voice functions below stay —
+  // they are the shared drafting logic, still tested. Break-glass only, with an
+  // explicit choice to run the Director's key off its sovereign device.
+  if (process.env.SCRIBE_ALLOW_BOX !== '1') {
+    log('  ✗ the box scribe is RETIRED (2026-07-24). James\'s Quill drafts on the Mac')
+    log('    now (warm.contact#43) — run `warm quill-draft` there. The drafting key does')
+    log('    not belong on the box (AD-10). Break-glass only: SCRIBE_ALLOW_BOX=1.')
+    process.exit(1)
+  }
+  log('  ⚠ BREAK-GLASS: the box scribe is retired; running it places the Director\'s key here.')
   if (!QUILL_SK) {
     log('  ✗ QUILL_NSEC missing — the scribe signs as JAMES\'S QUILL (npub13uuznpc…),')
     log('    the Director\'s own instance already minted in warm.contact. Its key is')
