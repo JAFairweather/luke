@@ -36,10 +36,9 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { createHash, randomBytes } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
-import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
+import { finalizeEvent, getPublicKey, nip19, nip44 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
-import { BunkerSigner } from 'nostr-tools/nip46'
 import { newScopeKey, publishScope, grant, receiveGrants, latestGrants, fetchScope, localSigner } from './nipxx.mjs'
 import { extractHashtags, ensureAppLinks, ensureLinks, ensureDisclosure, DISCLOSURE, mentionedApps, htmlToText } from './post-format.mjs'
 
@@ -97,16 +96,62 @@ const WANTS_BUNKER = /^nip46$/i.test(process.env.SCRIBE_SIGNER || '') || (!!SCRI
 function makeQuillSigner() {
   if (WANTS_BUNKER) {
     if (!SCRIBE_BUNKER_URI) return null
+    // Hand-rolled NIP-46 client (2026-07-24, replacing BunkerSigner). Two
+    // hard-won lessons, both proven against Bunker46 on the wire:
+    //   1. The transport key must be STABLE (SCRIBE_CLIENT_NSEC) — the bunker
+    //      binds the connection to the client pubkey; a per-run throwaway key
+    //      looks like a stranger with an expired invite and hangs forever.
+    //   2. Bunker46 answers in nip44; this nostr-tools BunkerSigner listens in
+    //      nip04, so its requests land but it can never hear the replies.
+    const uri = new URL(SCRIBE_BUNKER_URI)
+    const remotePk = uri.hostname || uri.pathname.replace(/^\/\//, '')
+    const relays = [...new Set(uri.searchParams.getAll('relay'))]
+    const secret = uri.searchParams.get('secret') || ''
+    const clientKey = loadSk(process.env.SCRIBE_CLIENT_NSEC?.trim()) ?? newScopeKey()
+    const clientPk = getPublicKey(clientKey)
+    const convKey = nip44.v2.utils.getConversationKey(clientKey, remotePk)
     const pool = new SimplePool()
-    const clientKey = newScopeKey() // a random 32-byte key: the NIP-46 transport key, throwaway
-    let bunkerP = null
-    const ensure = () => (bunkerP ??= BunkerSigner.fromURI(clientKey, SCRIBE_BUNKER_URI, { pool }))
+    const pending = new Map()
+    let subbed = false, connectedP = null
+    const ensureSub = () => {
+      if (subbed) return
+      subbed = true
+      // NOTE: single filter object — this nostr-tools subscribeMany does NOT
+      // take an array of filters; an array silently matches nothing.
+      pool.subscribeMany(relays, { kinds: [24133], authors: [remotePk], '#p': [clientPk] }, {
+        onevent(e) {
+          try {
+            const m = JSON.parse(nip44.v2.decrypt(e.content, convKey))
+            const p = pending.get(m.id)
+            if (!p) return
+            pending.delete(m.id)
+            if (m.error) p.reject(new Error(`bunker: ${m.error}`))
+            else p.resolve(m.result)
+          } catch {} // not for us (nip04 stragglers, other sessions)
+        },
+      })
+    }
+    const rpc = (method, params, timeoutMs = 60_000) => new Promise((resolve, reject) => {
+      ensureSub()
+      const id = crypto.randomUUID()
+      pending.set(id, { resolve, reject })
+      const ev = finalizeEvent({
+        kind: 24133, created_at: Math.floor(Date.now() / 1000), tags: [['p', remotePk]],
+        content: nip44.v2.encrypt(JSON.stringify({ id, method, params }), convKey),
+      }, clientKey)
+      Promise.allSettled(pool.publish(relays, ev))
+      setTimeout(() => { if (pending.delete(id)) reject(new Error(`nip46 ${method} timed out after ${timeoutMs}ms`)) }, timeoutMs)
+    })
+    // connect is best-effort: a fresh pairing needs it (the secret auto-creates
+    // the connection), an established one answers RPCs without it — so a
+    // rejected/ignored connect must not block an already-ACTIVE connection.
+    const ready = () => (connectedP ??= rpc('connect', [remotePk, secret], 15_000).catch(() => 'ack'))
     return {
       mode: 'bunker',
-      getPublicKey: async () => (await ensure()).getPublicKey(),
-      signEvent: async (e) => (await ensure()).signEvent(e),
-      nip44Encrypt: async (pk, pt) => (await ensure()).nip44Encrypt(pk, pt),
-      nip44Decrypt: async (pk, ct) => (await ensure()).nip44Decrypt(pk, ct),
+      getPublicKey: async () => { await ready(); return rpc('get_public_key', []) },
+      signEvent: async (e) => { await ready(); return JSON.parse(await rpc('sign_event', [JSON.stringify(e)])) },
+      nip44Encrypt: async (pk, pt) => { await ready(); return rpc('nip44_encrypt', [pk, pt]) },
+      nip44Decrypt: async (pk, ct) => { await ready(); return rpc('nip44_decrypt', [pk, ct]) },
     }
   }
   if (!QUILL_SK) return null
