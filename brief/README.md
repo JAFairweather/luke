@@ -8,7 +8,7 @@ public Docker image and a public repo — nothing private goes in here.**
 | `shared.md` | nobody's — substance + house rules | every drafter | — |
 | `nave.md` | the project | `luke-brain.mjs` | Nactor → Telegram |
 | `luke.md` | Luke, the agent | `luke-brain.mjs` | Nactor → Telegram |
-| `jaf.md` | the Director | `jaf-scribe.mjs` | Ngage — he signs in his own hand |
+| `jaf.md` | the Director | **Mac Quill** (`warm quill-draft`) — box `jaf-scribe.mjs` retired 2026-07-24 | Ngage — he signs in his own hand, pen-verified |
 
 ## The rule
 
@@ -19,6 +19,14 @@ stamped on the result, so the model is never asked to choose a voice.
 This replaced a single `voice.md` that described every voice at once and let the
 model pick a hat per post — which is how two distinct voices quietly regress
 toward one average voice. `voices.test.mjs` pins the isolation.
+
+**`jaf.md` now steers the Mac, not the box (2026-07-24).** The Director's
+drafting relocated to James's Quill on his own machine (`warm quill-draft`,
+warm.contact#43) — it drafts where the key lives and emits pen-direct, so the
+desk verifies the pen cryptographically. `brief/jaf.md` remains the standing
+voice file, copied to `~/.warmcontact/jaf-brief.md`; the box `jaf-scribe.mjs`
+entrypoint is sealed (break-glass only). Its exported voice functions stay —
+they are the shared drafting logic (`jaf-scribe-steering.test.mjs`).
 
 ## Where each file comes from
 
