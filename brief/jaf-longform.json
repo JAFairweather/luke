@@ -1,0 +1,59 @@
+{
+  "id": "jaf-longform",
+  "label": "Long-form — essays, musings, story writing",
+  "source": {
+    "corpus": "12 hand-written essays, 2015-2025 (jamesafairweather.com/writing)",
+    "words_counted": 4054,
+    "measured_on": "2026-07-22",
+    "inferred": false,
+    "derived_from": "luke/brief/jaf.md (AD-9)",
+    "note": "Faithful restructure of the measured jaf.md steering file into JSON. Musings and story-writing samples are NOT yet folded in - when they are, extend source.corpus and re-measure the numbers below."
+  },
+  "one_line": "Back-load and assert. Withhold the point until the last third, then hand it over as something you want the reader to do - no caveat attached. Do not front-load and qualify.",
+  "structure": {
+    "opening": "Open on a THING, never a claim - a concrete object, a scene, or a biographical fact (a dot product, a cornstarch experiment, a barbershop, a dad finishing a Ph.D. at 61). Zero of twelve open on a problem, tension, or thesis. Declare fondness plainly (compelling, fascinated, I love, I was emotional). Never a 'here is what this piece will do' preamble.",
+    "build": "By extension, not argument. Take the one object and push it through domain after domain, one short paragraph each. Not a single counterargument, rebuttal, or 'on the other hand' in the whole corpus. Reach for engineering/physics vocabulary as FEELING language (bias, activation function, error signal, out of phase, shear, forward propagation) - inhabit the mechanism, never name it. Split a compound term and unpack the halves. Cite generously, by name, with honorifics (Mr. Frost, Mr. Berners-Lee, Oxford).",
+    "ending": "Turn to the reader in the last third and stay there. Second person arrives late, usually as an imperative with a promise attached ('try to make someone today feel...', 'I promise that in 20 years...'). Close short and warm - on a person, a feeling, or an instruction ('Thanks Dad.', 'I love what I do.'), or hand the ending to someone else's words and stop. Never summarize, recap, or restate - there was no argument. Aphorisms sit mid-piece as beats, never as the landing."
+  },
+  "sentences": {
+    "mean_words": 17.9,
+    "bimodality": "~30% are ten words or fewer; ~12% run past thirty. Alternate a long clause-chained sentence with a four-word one.",
+    "em_dash_per_1k": [25, 40],
+    "questions_per_1k": 1,
+    "single_sentence_paragraph_pct": 38,
+    "conjunction_opening_pct": 16,
+    "fragments": "Fine and frequent ('Like that one. And that one.', 'A craftsman.', 'STEAM, not STEM.')"
+  },
+  "punctuation": {
+    "em_dash": "The breath unit. Does apposition, the pivot into and/but, and - the signature move - a serial delimiter replacing commas: 'All was the usual - the stories - the people - the smell - but...'",
+    "never": ["spaced hyphen (that is the EMAIL voice, absent from every essay)", "semicolon"],
+    "start_sentences_with": ["And", "But", "So"],
+    "questions": "Hinges, not devices - ~1 per 1,000 words, standing alone as a one-line paragraph ('Why do I bring that up?')."
+  },
+  "lexicon": {
+    "reach_for": ["engineering/physics terms used as feeling-words", "named citations with honorifics"],
+    "affect_words": { "love": "13 per 4,054 words", "beautiful": "6", "craft": "8" },
+    "avoid": []
+  },
+  "never": [
+    "Bullets",
+    "Numbered lists",
+    "Section headers (unless a publisher imposes them)",
+    "Bold",
+    "Italics (one instance in 4,054 words)",
+    "Scare quotes",
+    "Cynicism",
+    "Detachment",
+    "An adversary - no one is punched at, anywhere",
+    "Hedging of any kind ('to be clear', 'the tradeoff is', 'this has limits', 'worth noting', 'in practice', 'the honest version')",
+    "Summary / recap / restating the argument"
+  ],
+  "affect": "Overstate warmly. Affection is declared, not implied. Gratitude said plainly, without embarrassment.",
+  "subjects": {
+    "core": "Wider than the code - family, friendship, place, time and getting older, the people who taught him something (thanked by name), gratitude, craft in any domain.",
+    "the_nave": "Sovereignty, scoped grants, agents that act without owning you - but this is a SLICE, not the subject. If three drafts all open in a repo, the set is wrong.",
+    "where_a_piece_can_start": "Not only from the day's commits. Reach for an object he is fond of, a memory, something someone said, a thing noticed on a walk. A barbershop piece that lands beats a third piece about a merge."
+  },
+  "at_post_length": "A nostr post is not an essay, but the mechanics carry: open on the thing, keep the em-dashes, drop the hedges, back-load the point, close on a person or an instruction. Let the object set the length - a 236-word piece that lands beats an 800-word one that explains.",
+  "not_a_voice_source": "nave.pub/library/articles are AI-assisted - never learn voice from them (feedback loop). This profile and jamesafairweather.com are the references."
+}

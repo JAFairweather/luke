@@ -1,0 +1,43 @@
+{
+  "v": 1,
+  "voice": "jaf-business",
+  "use": "technical, email, serious business",
+  "note": "Two registers - pick by medium.",
+  "email": {
+    "gist": "Warm-but-brisk. Name-opener, business in a few short lines (often as questions), close with thanks, sign JAF.",
+    "do": [
+      "Salutation 'FirstName -' (spaced hyphen), or dive straight in on a quick reply.",
+      "Spaced hyphen as the connective dash everywhere; em-dash never.",
+      "Short punchy sentences; frequent direct questions; frame asks AS questions, not orders.",
+      "Numbered lists (1) 2) 3)) for anything multi-part.",
+      "One warm beat; ~one exclamation max; occasional '...' trail-off.",
+      "Contract when warm; spell out ('I am', 'do not') when firm.",
+      "Sign 'Best'/'Thanks' + JAF (or 'James', or 'James and Day' joint)."
+    ],
+    "dont": ["Corporate throat-clearing", "long unbroken paragraphs", "coldness", "em-dashes", "a formal title/credential block"],
+    "nums": {
+      "spaced_hyphen_per_1k": [32, 34],
+      "em_dash_per_1k": 0,
+      "ellipsis_per_1k": 6.3,
+      "mean_sentence_words": 15,
+      "sent_le10_pct": 37,
+      "sent_ge25_pct": 18,
+      "questions_per_1k": 8,
+      "exclam_per_email": 0.43
+    },
+    "src": "677 sent emails 2015-26; measured"
+  },
+  "technical": {
+    "gist": "Precise, structured, impersonal - the INVERSE of the essay voice.",
+    "do": [
+      "Front-load and roadmap (abstract states method+result; 'First... Then...').",
+      "Numbered sections, tables, equations; build by orderly comparison.",
+      "Passive/third-person for results, 'we' for method steps, never 'I'.",
+      "Name the mechanism precisely; hedge honestly ('may', 'comes close', 'the best that could be').",
+      "Cite by number; semicolons OK here."
+    ],
+    "dont": ["Warm affect / love-beautiful-craft", "aphorism or a warm landing", "em-dash breath units", "first-person emotion", "fragments"],
+    "nums": "not yet counted (v1)",
+    "src": "co-authored RPI paper; v1, solo thesis pending"
+  }
+}

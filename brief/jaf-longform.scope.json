@@ -1,0 +1,33 @@
+{
+  "v": 1,
+  "voice": "jaf-longform",
+  "use": "essays, musings, story",
+  "gist": "Back-load and assert. Withhold the point to the last third, then hand it over as an ask - no caveat.",
+  "do": [
+    "Open on a thing (object, scene, biographical fact), never a claim; declare fondness plainly.",
+    "Build by extension, not argument - push one object through domain after domain, a short paragraph each.",
+    "Use engineering/physics words as feeling-language; inhabit the mechanism, never name it.",
+    "Split a compound term and unpack the halves; cite by name with honorifics.",
+    "Turn to the reader late (last third) as an imperative-with-promise; close short and warm on a person, feeling, or instruction.",
+    "Em-dash is the breath unit, incl. a serial delimiter replacing commas; fragments fine; start sentences with And/But/So.",
+    "~1 standing-alone question per 1k words as a hinge."
+  ],
+  "dont": [
+    "No preamble, summary, recap, or restated argument.",
+    "No hedging (to be clear / the tradeoff is / worth noting / in practice).",
+    "No bullets, numbered lists, headers, bold, or scare quotes.",
+    "No semicolon; no spaced hyphen (that is the email voice).",
+    "No cynicism, detachment, or adversary."
+  ],
+  "nums": {
+    "em_dash_per_1k": [25, 40],
+    "mean_sentence_words": 17.9,
+    "sent_le10_pct": 30,
+    "sent_ge30_pct": 12,
+    "single_sentence_para_pct": 38,
+    "conj_open_pct": 16,
+    "questions_per_1k": 1
+  },
+  "affect": "Overstate warmly; love/beautiful/craft recur. Subjects wider than code - family, place, time, craft; the Nave is a slice, not the subject.",
+  "src": "12 hand-written essays 2015-25, 4054w; measured (AD-9)"
+}

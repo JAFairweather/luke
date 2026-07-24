@@ -1,0 +1,105 @@
+{
+  "id": "jaf-business",
+  "label": "Technical / email / serious business communications",
+  "source": {
+    "corpus": [
+      "Sent email, Gmail 2015-2026: 677 sent messages measured (643 cleaned openings; 112 sentences from 10 full bodies). Content treated as style-only and never retained.",
+      "Academic paper: 'FEA based impedance method for designing active structures' (Littlefield, J.A. Fairweather, Craig; Rensselaer Polytechnic Institute) - full technical prose read."
+    ],
+    "measured_on": "2026-07-24",
+    "inferred": false,
+    "measurement_status": {
+      "correspondence": "MEASURED - 677 emails over 11 years; the numbers below are counted.",
+      "formal_technical": "v1 - characterized from one full paper read. Patterns are real (evidence, not inference) but the numeric rates are not yet precisely counted. A count pass and, ideally, the full solo PhD thesis would promote it."
+    },
+    "privacy": "Built from real correspondence and a technical paper. NO sensitive content (clients, dollar figures, legal matters, deals) is stored - only how he writes. Every example is a neutral invention, not a real message."
+  },
+  "note": "This bucket holds TWO registers James groups under 'business'. They are different - almost opposite on several axes. Choose by medium: correspondence for email/messages, formal_technical for reports/specs/papers.",
+
+  "registers": {
+
+    "correspondence": {
+      "label": "Email and business messages",
+      "one_line": "Warm-but-brisk operator voice. Open on the name, do the business in a few short lines - often as questions, not orders - close with thanks, sign JAF.",
+      "one_line_gestalt": "'Name -' opener, spaced hyphens everywhere, near-zero em-dashes, short punchy sentences with frequent direct questions, numbered lists for anything multi-part, occasional '...' trail-off, one friendly exclamation, signed JAF.",
+      "salutation": {
+        "dominant": "'FirstName -' (name + spaced hyphen): 34% of all openings, ~63% of the ~54% that carry any salutation. The signature greeting ('Mike -', 'Chris -').",
+        "other": "~46% dive straight in, no salutation (quick / mobile replies); Hi/Hello/Hey 16%, often still hyphenated ('Hey Sarah -'); 'FirstName,' with a comma only ~3%. Multiple recipients listed by name, occasionally the rare em-dash ('Priya, Tom -')."
+      },
+      "sign_off": {
+        "dominant": "'JAF' (initials), by a wide margin - usually stacked under a short closer: 'Best' / 'Very best' / 'Thanks' + JAF.",
+        "variants": "'James' (full first name) in warmer or more formal notes and mobile replies; joint 'JAF & DM' / 'James and Day' when writing with Day.",
+        "note": "No standing title/credential block in personal Gmail - sign-offs are short initials or first name, not a formal signature."
+      },
+      "punctuation": {
+        "spaced_hyphen_per_1k": [32, 34],
+        "em_dash_per_1k": 0,
+        "ellipsis_per_1k": 6.3,
+        "spaced_hyphen_note": "The defining tell - an all-purpose connective dash mid-sentence and after names. The email register's substitute for the essay em-dash, which is effectively zero here.",
+        "ellipsis_note": "A real habit - trailing off at the end of a thought or softening a close ('Would love to help...')."
+      },
+      "sentences": {
+        "mean_words": 15,
+        "under_10_pct": 37,
+        "over_25_pct": 18,
+        "shape": "Bimodal - clipped logistics sentences plus the occasional long reflective one. Short and punchy by default; long only when the topic warrants.",
+        "email_length": "Highly variable - quick replies 5-40 words, substantive notes 120-250+."
+      },
+      "questions_and_exclamations": {
+        "questions_per_1k": 8,
+        "questions_note": "~10% of sentences end in '?'. He asks directly and often, and frames asks AS questions ('Would 2:15 work?', 'Can you please send the timeline?') rather than as imperatives.",
+        "exclamations_per_email": 0.43,
+        "exclamations_note": "Warm but not gushing - about one per email when present, on a friendly beat."
+      },
+      "register_signals": {
+        "contractions": "Moderate and register-signaling: warm/personal emails contract freely ('I'd', 'we'll', 'can't'); serious or firm-tone emails deliberately spell out ('I am', 'do not', 'it does not seem reasonable'). The contraction rate itself marks the register.",
+        "fragments": "Frequent and intentional - standalone short lines: 'All set.', 'Great.', 'Thanks.', 'Best Mark'."
+      },
+      "lexicon": {
+        "abbreviations": "Light-touch: FYI (common), LMK, occasional ASAP/Thx. NOT a heavy-acronym writer - no OOO/EOD/COB observed.",
+        "warm_openers": "Present but specific, not formulaic (~8% 'Thanks...', ~4% 'Hope all is well', ~2% 'Great to connect'). Feels particular when it appears."
+      },
+      "tells": [
+        "Numbered lists ('1) ... 2) ... 3)') to structure any multi-topic email - very characteristic.",
+        "Name dropped mid-sentence for warmth/emphasis ('Thanks Jon -').",
+        "Action-closers: 'Please advise', 'LMK if/when I can be helpful', 'Let me know if there is any follow-up'.",
+        "Relational reassurance in business notes ('No agenda; I find the problem genuinely interesting and would enjoy being helpful').",
+        "Firmness rises via longer declarative sentences, never caps or extra punctuation.",
+        "Occasional capitalized common noun for weight ('Holiday')."
+      ],
+      "examples_neutral": [
+        "Salutation: 'Mike -' / 'Hey Sarah -' / (multi) 'Priya, Tom -'",
+        "Warm opener: 'Hope the week is treating you well.'",
+        "Ask as question: 'Can you please send the updated timeline so we can lock the schedule?'",
+        "Numbered: '1) All set on my end. 2) Let me know if the noon slot still works.'",
+        "Short direct question: 'Does Thursday afternoon work for a quick call?'",
+        "Trailing close: 'Would love to help make this happen...'",
+        "Sign-off default: 'Best' / newline / 'JAF'",
+        "Sign-off warm or joint: 'Thanks so much - JAF' / 'James and Day'"
+      ],
+      "never": [
+        "Corporate throat-clearing ('I am reaching out to', 'per my last email')",
+        "Long unbroken paragraphs (he numbers instead)",
+        "Coldness - always at least one warm or courteous beat",
+        "Em-dashes (that's the essay voice; email uses the spaced hyphen)"
+      ]
+    },
+
+    "formal_technical": {
+      "label": "Reports, specs, papers, serious technical writing",
+      "one_line": "Precise, structured, impersonal. Signpost the path, name the mechanism exactly, state the limits honestly. This is the INVERSE of the essay voice - do not apply jaf-longform's rules here.",
+      "opening": "DO front-load and roadmap (opposite of the essays). An abstract states method and result up front; the intro surveys prior approaches, then: 'First... Then... The experimental results will then be compared to the theory.' The preamble the essays forbid is required here.",
+      "structure": "Numbered sections with headers, tables, figures, equations - all expected. Build by orderly argument and comparison ('Of the methods mentioned, only the impedance method... comes close to meeting all three requirements'), not by extension.",
+      "voice": "Passive and third-person for results ('The method is found to accurately predict', 'Comparisons are made'); 'we' for method steps ('we will now show how to get the moment impedances'); never 'I'. NAME the mechanism precisely - eigenvectors, impedance, admittance, boundary conditions - the opposite of the essay's 'inhabit the mechanism, never name it'.",
+      "hedging": "Hedge honestly and technically - 'may not be a good representation', 'should be extendable', 'comes close to meeting', 'not as good as those for the aluminum plate, but were the best that could be obtained'. Stating a limitation is part of the rigor. (The essays forbid all hedging; here it is mandatory.)",
+      "sentences": "Moderate and fairly uniform length (not bimodal). Complex, qualified clauses. Nominalizations - 'the determination of the impedances', 'the recovery of the response'.",
+      "citations": "By numbered reference, not by name-with-honorific.",
+      "punctuation": "Standard - periods, commas, colons. Few or no em-dashes. Semicolons acceptable here (unlike every other register).",
+      "never": ["Warmth-forward affect or 'love/beautiful/craft' vocabulary", "Aphorism or a warm landing", "Em-dash breath units", "First-person-singular emotion", "Fragments"]
+    }
+  },
+
+  "contrast_with_longform": "Same author, opposite instincts by register. Essays: back-load, no preamble, no hedge, inhabit-never-name, no headers, em-dash breath unit. Technical: front-load, signpost, hedge honestly, name precisely, full apparatus, standard punctuation. Email sits between: warm and brief like the essays, but transactional, spaced-hyphened, question-driven, and numbered - not lyrical. Never draft a report in the essay voice or an essay in the report voice.",
+
+  "todo": "Promote formal_technical from v1 to measured with a precise count pass (sentence-length distribution, passive rate) - ideally against the full solo PhD thesis, not just the co-authored paper."
+}
