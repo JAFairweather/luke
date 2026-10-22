@@ -120,6 +120,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const VENDOR_FILES = {
   'nostr-tools.mjs': join(HERE, 'gate-vendor', 'nostr-tools.mjs'),
   'nostr-tools-nip46.mjs': join(HERE, 'gate-vendor', 'nostr-tools-nip46.mjs'),
+  'nostr-tools-pool.mjs': join(HERE, 'gate-vendor', 'nostr-tools-pool.mjs'),
   'nave-connect.mjs': join(HERE, 'nave-connect.mjs'),
 }
 const vendorCache = new Map()
@@ -215,7 +216,7 @@ const LOGIN = shell(`${NAME} — prove your key`, `
     <div class="note">The key signs in this tab and is forgotten — never stored, never sent.</div>
   </details>
   <div class="err" id="err"></div>
-  <script type="importmap">{"imports":{"nostr-tools":"/gate/vendor/nostr-tools.mjs","nostr-tools/nip46":"/gate/vendor/nostr-tools-nip46.mjs"}}</script>
+  <script type="importmap">{"imports":{"nostr-tools":"/gate/vendor/nostr-tools.mjs","nostr-tools/nip46":"/gate/vendor/nostr-tools-nip46.mjs","nostr-tools/pool":"/gate/vendor/nostr-tools-pool.mjs"}}</script>
   <script type="module">
   import { nip07Signer, nip46Signer, localSigner, serializeSession, parseSession } from '/gate/vendor/nave-connect.mjs';
   import { nip19 } from 'nostr-tools';

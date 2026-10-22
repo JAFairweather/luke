@@ -10,9 +10,11 @@ Currently bundled from nostr-tools 2.24.1. Regenerate after bumping it:
 ```bash
 npx esbuild node_modules/nostr-tools/lib/esm/index.js --bundle --format=esm --minify --outfile=gate-vendor/nostr-tools.mjs
 npx esbuild node_modules/nostr-tools/lib/esm/nip46.js --bundle --format=esm --minify --outfile=gate-vendor/nostr-tools-nip46.mjs
+npx esbuild node_modules/nostr-tools/lib/esm/pool.js --bundle --format=esm --minify --outfile=gate-vendor/nostr-tools-pool.mjs
 ```
 
-The login page's importmap maps the bare `nostr-tools` / `nostr-tools/nip46`
-specifiers to these files. `nave-connect.mjs` is NOT copied here — the gate
+The login page's importmap maps the bare `nostr-tools` / `nostr-tools/nip46` /
+`nostr-tools/pool` specifiers to these files — every bare specifier
+`nave-connect.mjs` imports must be mapped (`luke-gate.test.mjs` checks this). `nave-connect.mjs` is NOT copied here — the gate
 serves the canonical module from the repo root at `/gate/vendor/nave-connect.mjs`,
 so it can never drift from source.
