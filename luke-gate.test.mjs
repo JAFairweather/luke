@@ -20,11 +20,12 @@ const OTHER_SK = generateSecretKey()
 let n = 0, pass = 0
 const t = async (name, fn) => { n++; try { await fn(); pass++; console.log(`ok - ${name}`) } catch (e) { console.error(`FAIL - ${name}\n   ${e.stack || e.message}`) } }
 
-// Sign the same kind-27235 challenge the login page produces. Distinct
-// created_at per call (the replay guard dedupes by event id).
+// Sign the same kind-27235 challenge the login page produces. A nonce tag
+// makes every id distinct (the replay guard dedupes by event id); an offset on
+// created_at alone collided whenever the clock ticked between two calls.
 let tick = 0
 const challenge = (sk, { u = `${BASE}/gate/auth`, method = 'POST', kind = 27235, age = 0 } = {}) =>
-  finalizeEvent({ kind, created_at: Math.floor(Date.now() / 1000) - age - (tick++ % 50), tags: [['u', u], ['method', method]], content: '' }, sk)
+  finalizeEvent({ kind, created_at: Math.floor(Date.now() / 1000) - age, tags: [['u', u], ['method', method], ['nonce', String(tick++)]], content: '' }, sk)
 
 // In production Caddy sets x-forwarded-proto; without it the service assumes
 // https (and our signed u tag is http://…), so the tests supply it like the
@@ -64,11 +65,20 @@ try {
       '"nostr-tools/nip46":"/gate/vendor/nostr-tools-nip46.mjs"']) {
       assert.ok(html.includes(bit), `login page must include ${bit}`)
     }
+    // Every bare specifier nave-connect.mjs imports must be in the importmap, or
+    // the module graph dies before any button is wired (0a7738f added
+    // nostr-tools/pool and the gate stayed silently broken).
+    const map = JSON.parse(html.match(/<script type="importmap">(.*?)<\/script>/s)[1]).imports
+    const nc = await (await fetch(`${BASE}/gate/vendor/nave-connect.mjs`)).text()
+    for (const [, spec] of nc.matchAll(/^import\b[^'"]*['"]([^'"./][^'"]*)['"]/gm)) {
+      assert.ok(map[spec], `importmap must map ${spec} (imported by nave-connect.mjs)`)
+      assert.equal((await fetch(`${BASE}${map[spec]}`)).status, 200, `${map[spec]} serves`)
+    }
     assert.ok(!/https?:\/\/(cdn|unpkg|jsdelivr|esm\.sh)/.test(html), 'no CDN scripts on the login page')
   })
 
   await t('vendor route serves the allowlisted modules as JS', async () => {
-    for (const f of ['nostr-tools.mjs', 'nostr-tools-nip46.mjs', 'nave-connect.mjs']) {
+    for (const f of ['nostr-tools.mjs', 'nostr-tools-nip46.mjs', 'nostr-tools-pool.mjs', 'nave-connect.mjs']) {
       const r = await fetch(`${BASE}/gate/vendor/${f}`)
       assert.equal(r.status, 200, `${f} serves`)
       assert.match(r.headers.get('content-type'), /text\/javascript/)
