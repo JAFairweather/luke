@@ -106,24 +106,25 @@ const SKIN_CSS = `/* ============ Nave skin — brass on warm brown-black. Dark 
 *{scrollbar-color:#3a3020 transparent}
 
 /* ============ Rebrand — Luke, on the Nave (not OpenClaw) ============ */
-/* Kill OpenClaw's own update-nag banner. */
-.update-banner{display:none!important}
-/* Sidebar brand block → a brass Luke seal + NAVE / Luke wordmark. The seal is a
-   ::before over a hidden original; the eyebrow/title text is replaced via ::after. */
-.sidebar-brand__logo{content:var(--luke-av)!important;object-fit:cover!important;border-radius:9px!important;overflow:hidden}
-/* v2026.7.1 removed the eyebrow element, so the NAVE kicker rides the title
-   block instead (::before), which survived the Control UI overhaul. */
-.sidebar-brand__title{font-size:0!important;line-height:1.15!important}
-.sidebar-brand__title::before{content:"NAVE";display:block;font-family:var(--mono);font-size:11px;letter-spacing:.26em;color:var(--accent)}
-.sidebar-brand__title::after{content:"Luke";font-family:Georgia,"Times New Roman",serif;font-size:19px;letter-spacing:.02em;color:var(--text-strong)}
+/* Kill OpenClaw's own update nag (7.x banner, 10.x floating sidebar card). */
+.update-banner,.sidebar-update-card--floating{display:none!important}
+/* v2026.10 dropped the sidebar brand block (logo + title) for the agent card:
+   avatar + agent name. The avatar rule below already makes that Luke's seal, so
+   the NAVE kicker stacks over the name in the same row height. */
+.sidebar-agent-card__name{flex-direction:column!important;align-items:flex-start!important}
+.sidebar-agent-card__name::before{content:"NAVE";display:block;font-family:var(--mono);font-size:9px;font-weight:500;line-height:1.1;letter-spacing:.26em;color:var(--accent)}
+.sidebar-agent-card__name-text{font-family:Georgia,"Times New Roman",serif;letter-spacing:.02em}
 /* Luke's chat avatar → the same brass seal instead of the pig mascot. */
 /* Any avatar EXCEPT the user's own → Luke's face. Broad attribute-contains match
    so class variants (agent-chat__avatar--logo, chat-avatar, assistant-avatar…)
    can't dodge it; content:url swaps an <img>, background+hidden-child covers a
    container holding an inline <svg> pig. */
-[class*="avatar"]:not([class*="user"]){content:var(--luke-av)!important;background:#0b0906 center/cover no-repeat var(--luke-av)!important;object-fit:cover!important;overflow:hidden!important}
-[class*="avatar"]:not([class*="user"]) svg,[class*="avatar"]:not([class*="user"]) img{opacity:0!important}
-/* The stock device-login logo (OpenClaw device auth is off, but tidy it). */
+/* …but not the wrappers that merely hold one (v2026.10: avatar slots, queue items
+   "--no-avatar", stacks of avatars, hats): content:url on those paints Luke at
+   full image size across the chat. Keep the JS kind() skip list in step. */
+[class*="avatar"]:not([class*="user"]):not([class*="no-avatar"]):not([class*="avatars"]):not([class*="avatar-slot"]):not([class*="avatar-anchor"]):not([class*="avatar-link"]):not([class*="avatar-control"]):not([class*="avatar__hat"]):not([class*="avatar__status"]){content:var(--luke-av)!important;background:#0b0906 center/cover no-repeat var(--luke-av)!important;object-fit:cover!important;overflow:hidden!important}
+[class*="avatar"]:not([class*="user"]):not([class*="no-avatar"]):not([class*="avatars"]):not([class*="avatar-slot"]):not([class*="avatar-anchor"]):not([class*="avatar-link"]):not([class*="avatar-control"]):not([class*="avatar__hat"]):not([class*="avatar__status"]) svg,[class*="avatar"]:not([class*="user"]):not([class*="no-avatar"]):not([class*="avatars"]):not([class*="avatar-slot"]):not([class*="avatar-anchor"]):not([class*="avatar-link"]):not([class*="avatar-control"]):not([class*="avatar__hat"]):not([class*="avatar__status"]) img{opacity:0!important}
+/* The stock device-login logo (the gate auto-approves pairing, but tidy it). */
 .login-gate__logo{opacity:0}
 `
 
@@ -141,8 +142,8 @@ const SKIN_JS = `(function(){
   function cls(el){ try{ var c=el.getAttribute&&el.getAttribute('class'); return c==null?'':String(c); }catch(e){ return ''; } }
   function kind(el){
     var c=cls(el);
-    if(/sidebar-brand__logo/.test(c)) return 'brand';
-    if(/avatar/i.test(c) && !/user/i.test(c)) return 'avatar';
+    if(/sidebar-brand__logo|sidebar-workspace-header__mark/.test(c)) return 'brand';
+    if(/avatar/i.test(c) && !/user|no-avatar|avatars|avatar-(slot|anchor|link|control)|avatar__(hat|status)/i.test(c)) return 'avatar';
     return null;
   }
   function paint(el){
