@@ -210,7 +210,11 @@ export async function handleCockpitSkin(req, res, url) {
   if (url.startsWith('/gate')) return false           // let luke's gate handlers run
   // The SPA document — fetch the shell from OpenClaw and inject the skin.
   try {
-    const upstream = await fetch(OC_ORIGIN + req.url, { headers: { accept: 'text/html' } })
+    // OpenClaw 2026.10 refuses proxied requests that don't name the client
+    // (proxy_attribution_required), so pass on the forwarding headers Caddy set.
+    const headers = { accept: 'text/html' }
+    for (const h of ['x-forwarded-for', 'x-forwarded-proto', 'x-forwarded-host']) if (req.headers[h]) headers[h] = req.headers[h]
+    const upstream = await fetch(OC_ORIGIN + req.url, { headers })
     const body = await upstream.text()
     const ct = upstream.headers.get('content-type') || 'text/html; charset=utf-8'
     const out = ct.includes('html') ? inject(body) : body
