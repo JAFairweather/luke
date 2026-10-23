@@ -25,11 +25,11 @@ const FILES = [
   { name: 'SOUL.md',       group: 'Identity',         editable: true,  origin: 'yours', role: 'Who he is — voice, ethos, the dequalsf stance. Read first.',        loadWhen: 'Every session — read first ("who you are")' },
   { name: 'IDENTITY.md',   group: 'Identity',         editable: true,  origin: 'stock', role: 'The bootstrap identity record OpenClaw expects.',                    loadWhen: 'Every session (bootstrap identity record)' },
   { name: 'USER.md',       group: 'Identity',         editable: true,  origin: 'yours', role: 'Who he’s helping — you. The context he leads with.',                 loadWhen: 'Every session ("who you’re helping")' },
-  { name: 'AGENTS.md',     group: 'Operating manual', editable: true,  origin: 'yours', role: 'The standing operating manual — how he acts, closes the loop.',       loadWhen: 'Every session — always injected (the SOP)' },
+  { name: 'AGENTS.md',     group: 'Operating manual', editable: true,  origin: 'yours', role: 'The standing operating manual — how he acts, closes the loop. Since OpenClaw 2026.10 it also holds the local tool notes (TOOLS.md was folded in).',       loadWhen: 'Every session — always injected (the SOP)' },
   { name: 'BEATS.md',      group: 'Rhythm',           editable: true,  origin: 'yours', role: 'The script for the two DAILY beats (Morning + Evening). NOT the engine heartbeat — this is content a cron session follows, not the 30-min pulse. (Renamed from HEARTBEAT.md to end that confusion.)', loadWhen: 'Loaded every session; drives the Morning + Evening beats' },
-  { name: 'TOOLS.md',      group: 'Capabilities',     editable: true,  origin: 'stock', role: 'Capabilities available locally, and what is NOT wired.',             loadWhen: 'Every session (local setup + what is NOT wired)' },
   { name: 'MEMORY.md',     group: 'Memory',           editable: true,  origin: 'yours', role: 'Curated long-term memory. Main session only.',                       loadWhen: 'MAIN session only — curated long-term memory' },
   { name: 'punchlist.md',  group: 'Ledger',           editable: true,  origin: 'yours', role: 'The live ledger — 🔨 Renovation and 📋 Commitments.',                loadWhen: 'Read by the morning beat; kept honest live' },
+  { name: 'DREAMS.md',     group: 'Memory',           editable: false, origin: 'stock', role: 'The dreaming sweep’s own diary — machine-written each night.',      loadWhen: 'Written by nightly dreaming (memory-core); read-only here' },
 ]
 
 // The sessions Luke runs. Each inherits a shared BASE (loaded every session) and
@@ -37,24 +37,24 @@ const FILES = [
 // Console's primary axis: pick a session, see exactly what it loads.
 const SESSIONS = [
   { id: 'main', name: 'Main session', when: 'on demand · direct chat with you',
-    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'BEATS.md', 'MEMORY.md'], adds: [],
+    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'BEATS.md', 'MEMORY.md'], adds: [],
     note: 'MEMORY.md loads here because this is a main/direct session — the one place his long-term memory comes in.',
     effect: 'Interactive. He reads the base, leads with your context, and works the conversation with you.' },
   { id: 'am', name: 'Morning beat', when: '07:00 America/New_York · isolated cron', active: 'BEATS.md → Morning beat',
-    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'BEATS.md'], adds: ['punchlist.md'], reads: ['nostr-check.js (read-only script)'],
+    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'BEATS.md'], adds: ['punchlist.md'], reads: ['nostr-check.js (read-only script)'],
     note: 'Same base as every session — MEMORY.md is absent because a cron beat isn’t a main session.',
     effect: 'Runs the discipline check, flags the single most important stale commitment, scans nostr, offers at most one post — to Telegram.' },
   { id: 'pm', name: 'Evening beat', when: '22:00 America/New_York · isolated cron', active: 'BEATS.md → Evening beat',
-    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'BEATS.md'], adds: ['MEMORY.md'], reads: ['memory/YYYY-MM-DD.md (daily log)'],
+    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'BEATS.md'], adds: ['MEMORY.md'], reads: ['memory/YYYY-MM-DD.md (daily log)'],
     note: 'Same base — plus it opens MEMORY.md and the daily log to WRITE the day’s signal, not just read.',
     effect: 'One close-the-loop prompt, then writes the day’s signal to the daily log and promotes durable facts into long-term memory.' },
   { id: 'heartbeat', name: 'Heartbeat', when: 'every 30m · 07:00–22:00 ET · isolated engine pulse', active: 'engine heartbeat — openclaw.json · agents.defaults.heartbeat',
-    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'BEATS.md'], adds: [],
+    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'BEATS.md'], adds: [],
     note: 'The engine’s OWN pulse — this is the real "heartbeat," not BEATS.md and not a cron beat. An isolated tick every 30m where Luke checks whether anything needs doing. MEMORY.md is absent (not a main session). Cadence is config, not a prompt: see the Engine panel.',
     effect: 'A lightweight autonomous check-in between the daily beats. Most ticks find nothing to do — the point is Luke stays awake, not that every pulse acts.' },
   { id: 'dream', name: 'Nightly dreaming', when: '~03:00 ET nightly · isolated · memory-core', active: 'dreaming sweep — openclaw.json · plugins.memory-core.config.dreaming',
-    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'BEATS.md'], adds: ['MEMORY.md'], reads: ['memory/ (the daily logs)'],
-    note: 'The memory-consolidation pass. Runs isolated at night, sweeps the day’s memory, promotes durable facts. Driven by the Dream-Diary subagent on the cheap flash model — config in memory-core, not a prompt file.',
+    base: ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md', 'BEATS.md'], adds: ['MEMORY.md'], reads: ['memory/ (the daily logs)'],
+    note: 'The memory-consolidation pass. Runs isolated at night, sweeps the day’s memory, promotes durable facts. Driven by the Dream-Diary subagent on the cheap flash model — config in memory-core, not a prompt file. It writes its diary to DREAMS.md.',
     effect: 'Consolidates memory overnight: reads the day’s logs, distills durable facts into long-term memory. This is why MEMORY.md stays curated without you tending it.' },
 ]
 
@@ -62,7 +62,7 @@ const SESSIONS = [
 const CHAIN = [
   {
     trigger: 'Session start', when: 'every session',
-    loads: ['SOUL.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'IDENTITY.md', 'BEATS.md', 'MEMORY.md*'],
+    loads: ['SOUL.md', 'USER.md', 'AGENTS.md', 'IDENTITY.md', 'BEATS.md', 'MEMORY.md*'],
     effect: 'OpenClaw injects these into the system prompt. They ARE Luke’s standing knowledge and rules for the turn. (*MEMORY.md only in a main/direct session.)',
   },
   {
@@ -77,7 +77,7 @@ const CHAIN = [
   },
   {
     trigger: 'Heartbeat', when: 'every 30m · 07:00–22:00 ET · isolated engine session',
-    loads: ['the base set (SOUL/IDENTITY/USER/AGENTS/TOOLS/BEATS)'],
+    loads: ['the base set (SOUL/IDENTITY/USER/AGENTS/BEATS)'],
     effect: 'The engine’s own 30-minute pulse (openclaw.json · agents.defaults.heartbeat.every). An autonomous check-in BETWEEN the daily beats — this is the real "heartbeat," not BEATS.md and not a cron beat. Cadence shows live in the Engine panel.',
   },
   {
@@ -116,25 +116,37 @@ function runtimeView() {
     plugins: pluginsOn,
     gateway: {
       bind: c.gateway?.bind || null,
-      deviceAuth: c.gateway?.controlUi?.dangerouslyDisableDeviceAuth ? 'off' : 'on',
+      pairing: c.gateway?.auth?.trustedProxy?.deviceAutoApprove?.enabled ? 'auto-approved at the gate' : 'manual',
       allowedOrigins: c.gateway?.controlUi?.allowedOrigins || [],
     },
     channels: Object.entries(c.channels || {}).filter(([, v]) => v && v.enabled).map(([k]) => k),
   }
 }
 
+// The container runs as root over a workspace owned by the OpenClaw user, so git
+// refuses it as "dubious ownership" unless each call names it safe. (A --global
+// safe.directory write used to fail silently, and no save committed after July.)
+const git = (...args) => execFileSync('git', ['-c', `safe.directory=${BRAIN_DIR}`, '-C', BRAIN_DIR, ...args],
+  { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+
 function commitFile(name) {
-  // Commit as Luke, tolerating the container-vs-mount ownership split.
   try {
-    execFileSync('git', ['-C', BRAIN_DIR, 'config', '--global', '--add', 'safe.directory', BRAIN_DIR], { stdio: 'ignore' })
-  } catch {}
-  try {
-    execFileSync('git', ['-C', BRAIN_DIR, 'add', name], { stdio: 'ignore' })
-    execFileSync('git', ['-C', BRAIN_DIR,
-      '-c', 'user.email=luke@nave.pub', '-c', 'user.name=Luke',
-      'commit', '-q', '-m', `console: edit ${name}`], { stdio: 'ignore' })
+    git('add', name)
+    git('-c', 'user.email=luke@nave.pub', '-c', 'user.name=Luke', 'commit', '-q', '-m', `console: edit ${name}`)
     return true
   } catch { return false }
+}
+
+// What has changed in the workspace outside a console save — Luke's own writes,
+// engine migrations — so drift shows instead of piling up uncommitted.
+function workspaceDrift() {
+  try {
+    const last = git('log', '-1', '--format=%h %cs %s').trim()
+    const changes = git('status', '--porcelain').split('\n').filter(Boolean)
+      .map(l => ({ code: l.slice(0, 2).trim(), path: l.slice(3) }))
+      .filter(c => !/\.pre-(console|review)$/.test(c.path))
+    return { available: true, last, changes: changes.slice(0, 60), more: Math.max(0, changes.length - 60) }
+  } catch { return { available: false } }
 }
 
 // The gate check, reusing luke-service's cookie machinery (passed via ctx).
@@ -164,7 +176,7 @@ export async function handleConsole(req, res, url, ctx) {
       return { ...f, exists: !!st, bytes: st ? st.size : 0,
                hasBaseline: existsSync(join(BRAIN_DIR, f.name + '.pre-review')) }
     })
-    return (j(res, 200, { files, sessions: SESSIONS, chain: CHAIN, runtime: runtimeView() }), true)
+    return (j(res, 200, { files, sessions: SESSIONS, chain: CHAIN, runtime: runtimeView(), drift: workspaceDrift() }), true)
   }
 
   if (req.method === 'GET' && url.startsWith('/console/api/file')) {
@@ -272,6 +284,9 @@ main{padding:26px 24px 80px;max-width:1080px}
 .legend{display:flex;gap:16px;align-items:center;margin:0 0 16px;font-size:11.5px;color:var(--dim);font-family:var(--mono)}
 .sw{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px}
 .swu{background:var(--yours-bg);border:1px solid var(--yours)}.swt{background:var(--stock-bg);border:1px solid var(--stock-line)}
+/* uncommitted workspace changes */
+.drift{padding:10px 24px;border-bottom:1px solid var(--line);background:var(--yours-bg);font-size:12.5px;color:var(--dim);font-family:var(--mono)}
+.drift b{color:var(--yours);font-weight:600}.drift summary{cursor:pointer}.drift ul{margin:8px 0 2px;padding-left:18px;columns:2 18em}
 /* chain + engine */
 .chain{display:grid;gap:12px;margin-top:6px;max-width:820px}
 .node{border:1px solid var(--line);border-radius:10px;background:linear-gradient(180deg,color-mix(in srgb,var(--panel) 70%,var(--ground)),var(--ground));padding:16px 18px}
@@ -329,6 +344,7 @@ main{padding:26px 24px 80px;max-width:1080px}
   <button class="hbtn" id="theme">theme</button>
   <a class="hbtn" href="/gate/logout">sign out</a>
 </header>
+<div class="drift" id="drift" hidden></div>
 <div class="tabs" id="tabs"></div>
 <main id="main"><div class="spinner">loading Luke’s configuration…</div></main>
 
@@ -350,7 +366,15 @@ function fileByName(n){ return (MANIFEST.files||[]).find(f=>f.name===n) }
 
 async function boot(){
   MANIFEST = await (await fetch('/console/api/manifest')).json()
-  renderTabs(); selectTab('main')
+  renderDrift(); renderTabs(); selectTab('main')
+}
+function renderDrift(){
+  const d=MANIFEST.drift, box=$('#drift')
+  if(!d||!d.available||!d.changes.length) return
+  const n=d.changes.length+d.more
+  box.innerHTML='<details><summary><b>'+n+' uncommitted change'+(n===1?'':'s')+'</b> in Luke’s workspace since the last commit ('+esc(d.last)+') — made outside the console, by Luke or an engine update</summary><ul>'+
+    d.changes.map(c=>'<li>'+esc(c.code)+' '+esc(c.path)+'</li>').join('')+(d.more?'<li>…and '+d.more+' more</li>':'')+'</ul></details>'
+  box.hidden=false
 }
 function renderTabs(){
   const tabs=$('#tabs'); tabs.innerHTML=''
@@ -443,7 +467,7 @@ function renderEngine(){
   grid.append(card('Plugins on',pills(rt.plugins)))
   grid.append(card('Channels',pills(rt.channels)))
   grid.append(card('Heartbeat',rt.heartbeat?esc((rt.heartbeat.every==='0m'?'off':rt.heartbeat.every)+(rt.heartbeat.isolated?' · isolated':'')):'—'))
-  grid.append(card('Gateway','<span class="pill">bind: '+esc(rt.gateway&&rt.gateway.bind||'?')+'</span><span class="pill">device-auth: '+esc(rt.gateway&&rt.gateway.deviceAuth||'?')+'</span>'))
+  grid.append(card('Gateway','<span class="pill">bind: '+esc(rt.gateway&&rt.gateway.bind||'?')+'</span><span class="pill">pairing: '+esc(rt.gateway&&rt.gateway.pairing||'?')+'</span>'))
   grid.append(card('Cockpit origins',pills(rt.gateway&&rt.gateway.allowedOrigins)))
   m.append(grid)
 }
