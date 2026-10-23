@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Luke as a herdr agent. Run inside a herdr pane: the pane shows OpenClaw's own
 // terminal UI (`openclaw tui`, over ssh to the fleet), and this process reads
-// the TUI's status line ("gateway connected | idle") and reports idle/working
+// the TUI's status line ("connected | idle") and reports idle/working
 // to herdr, so Luke shows under Agents and `herdr agent prompt luke …` works.
 // Holds no keys — the only credential in play is your ssh login.
 import { spawn, execFileSync } from 'node:child_process'
@@ -12,10 +12,21 @@ import { fileURLToPath } from 'node:url'
 const IDLE = ['idle', 'aborted', 'error', 'abort failed']
 const WORKING = ['sending', 'running', 'streaming', 'waiting', 'finishing context', 'starting up']
 
+// At rest the line is "connected | idle" ("gateway connected" for the first 4s);
+// while busy it is a spinner line "⠋ streaming • 4s | connected", or a shimmer
+// phrase in place of the word when waiting.
+const CONN = '(?:gateway )?(?:re)?connected|disconnected'
+const REST = new RegExp(`^\\s*(${CONN}) \\| ([a-z ]+?)\\s*$`)
+const BUSY = new RegExp(`• \\d+(?:m \\d+)?s \\| (${CONN})\\s*$`)
+const isConnected = c => c !== 'disconnected'
+
 export function stateFromScreen(text) {
-  const lines = String(text).split('\n').filter(l => /\bgateway \w+ \| /.test(l))
-  const m = lines.at(-1)?.match(/\bgateway (\w+) \| ([a-z ]+?)\s*$/)
-  if (!m || m[1] !== 'connected') return 'unknown'
+  const lines = String(text).split('\n').filter(l => REST.test(l) || BUSY.test(l))
+  const last = lines.at(-1) ?? ''
+  const busy = last.match(BUSY)
+  if (busy) return isConnected(busy[1]) ? 'working' : 'unknown'
+  const m = last.match(REST)
+  if (!m || !isConnected(m[1])) return 'unknown'
   if (IDLE.includes(m[2])) return 'idle'
   if (WORKING.includes(m[2])) return 'working'
   return 'unknown'
