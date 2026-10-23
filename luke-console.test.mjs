@@ -39,6 +39,9 @@ assert.equal(m.runtime.gateway.pairing, 'auto-approved at the gate')
 
 const saved = JSON.parse((await call('POST', '/console/api/save', { name: 'SOUL.md', content: 'soul, edited\n' })).out)
 assert.equal(saved.committed, true, 'a console save commits')
+const { statSync: st } = await import('node:fs')
+const ref = execFileSync('git', ['-C', dir, 'symbolic-ref', 'HEAD'], { encoding: 'utf8' }).trim()
+assert.equal(st(join(dir, '.git', ref)).uid, st(dir).uid, 'the commit is written as the workspace owner')
 assert.equal((await call('POST', '/console/api/save', { name: 'DREAMS.md', content: 'x' })).code, 400, 'DREAMS.md is read-only')
 
 const html = (await call('GET', '/')).out
