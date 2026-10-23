@@ -123,11 +123,15 @@ function runtimeView() {
   }
 }
 
-// The container runs as root over a workspace owned by the OpenClaw user, so git
-// refuses it as "dubious ownership" unless each call names it safe. (A --global
-// safe.directory write used to fail silently, and no save committed after July.)
-const git = (...args) => execFileSync('git', ['-c', `safe.directory=${BRAIN_DIR}`, '-C', BRAIN_DIR, ...args],
-  { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+// The container runs as root over a workspace owned by the OpenClaw user. Run git
+// AS that owner: as root it refused the repo ("dubious ownership"; no save
+// committed after July), and a root commit leaves root-owned objects and refs
+// that then block Luke's own commits from inside OpenClaw.
+const git = (...args) => {
+  const { uid, gid } = statSync(BRAIN_DIR)
+  return execFileSync('git', ['-c', `safe.directory=${BRAIN_DIR}`, '-C', BRAIN_DIR, ...args],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], uid, gid, env: { ...process.env, HOME: '/tmp' } })
+}
 
 function commitFile(name) {
   try {
