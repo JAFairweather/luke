@@ -1,7 +1,7 @@
 // herdr state test — the TUI's status line, as rendered by OpenClaw 2026.10.6
 // (tui setConnectionStatus / updateBusyStatusMessage), maps to herdr states.
 import assert from 'node:assert'
-import { stateFromScreen } from './luke-herdr.mjs'
+import { stateFromScreen, reconnectDelay } from './luke-herdr.mjs'
 
 const screen = s => `are we calling it here?\n ${s}\n agent main (Luke) | session main | gemini-3.1-pro-preview medium | tokens 20k/200k\n`
 
@@ -25,5 +25,13 @@ assert.equal(stateFromScreen(busy('⠋ streaming • 4s | disconnected')), 'unkn
 assert.equal(stateFromScreen(busy('⠋ streaming • 4s | connected') + screen('connected | idle')), 'idle')
 // Luke's own reply quoting the status words must not count — only the last status line does.
 assert.equal(stateFromScreen(` connected | streaming\n` + screen('connected | idle')), 'idle')
+
+// A dropped link reconnects with backoff; a clean quit or Ctrl-C ends the pane.
+assert.equal(reconnectDelay(0, 5000), null)
+assert.equal(reconnectDelay(130, 5000), null)
+assert.equal(reconnectDelay(255, 5000), 2000, 'ssh: closed by remote host')
+assert.equal(reconnectDelay(255, 5000, 2000), 4000)
+assert.equal(reconnectDelay(255, 5000, 60000), 60000, 'capped at a minute')
+assert.equal(reconnectDelay(255, 3600000, 32000), 2000, 'a long session resets the backoff')
 
 console.log('✓ the TUI status line maps to herdr idle/working, and anything unclear is unknown')

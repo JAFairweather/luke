@@ -3,7 +3,8 @@
 // terminal UI (`openclaw tui`, over ssh to the fleet), and this process reads
 // the TUI's status line ("connected | idle") and reports idle/working
 // to herdr, so Luke shows under Agents and `herdr agent prompt luke …` works.
-// Holds no keys — the only credential in play is your ssh login.
+// Holds no keys — the only credential in play is your ssh login. A dropped link
+// (the fleet closing ssh, a network blip) reconnects; quitting the TUI ends the pane.
 import { spawn, execFileSync } from 'node:child_process'
 import { connect } from 'node:net'
 import { fileURLToPath } from 'node:url'
@@ -30,6 +31,13 @@ export function stateFromScreen(text) {
   if (IDLE.includes(m[2])) return 'idle'
   if (WORKING.includes(m[2])) return 'working'
   return 'unknown'
+}
+
+// After the TUI's ssh exits: null to stop (a clean quit, or Ctrl-C), else ms to wait before reconnecting —
+// 2s doubling to a minute, back to 2s once a session has lasted a minute.
+export function reconnectDelay(code, ranMs, prev = 0) {
+  if (code === 0 || code === 130) return null
+  return ranMs >= 60000 || !prev ? 2000 : Math.min(prev * 2, 60000)
 }
 
 function herdrCall(sock, method, params) {
@@ -59,12 +67,23 @@ async function main() {
   }
   const iv = setInterval(tick, 1000)
 
-  const tui = spawn('ssh', ['-t', host, 'docker exec -it -u 1000 deploy-openclaw-1 openclaw tui'], { stdio: 'inherit' })
-  tui.on('exit', async code => {
-    clearInterval(iv)
-    await herdrCall(sock, 'pane.release_agent', id)
-    process.exit(code ?? 0)
-  })
+  let wait = 0
+  const run = () => {
+    const began = Date.now()
+    const tui = spawn('ssh', ['-t', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3', host,
+      'docker exec -it -u 1000 deploy-openclaw-1 openclaw tui'], { stdio: 'inherit' })
+    tui.on('exit', async code => {
+      wait = reconnectDelay(code, Date.now() - began, wait)
+      if (wait !== null) {
+        console.error(`\nluke-herdr: the link to ${host} dropped (exit ${code}); reconnecting in ${wait / 1000}s — Ctrl-C to stop`)
+        return setTimeout(run, wait)
+      }
+      clearInterval(iv)
+      await herdrCall(sock, 'pane.release_agent', id)
+      process.exit(code ?? 0)
+    })
+  }
+  run()
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main()
