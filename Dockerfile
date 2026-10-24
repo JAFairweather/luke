@@ -1,5 +1,5 @@
 # Luke — the delegated-agent service + cockpit gate, as a standalone image.
-# Depends only on nostr-tools + node built-ins; no app code.
+# Depends on nostr-tools, ws, and node built-ins; no app code.
 FROM node:22-alpine
 WORKDIR /app
 # git: the Console commits each config edit to Luke's workspace repo.

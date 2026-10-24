@@ -13,6 +13,7 @@
 // callers that only know the identity discover the public endpoint here.
 import { nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
+import WebSocket from 'ws'
 
 const DEFAULT_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net']
 const TTL_MS = 10 * 60 * 1000
@@ -58,7 +59,7 @@ export async function resolveNactEndpoint({
   if (!hex) return fallback
 
   const useRelays = relays?.length ? relays : DEFAULT_RELAYS
-  const ownPool = pool || new SimplePool()
+  const ownPool = pool || new SimplePool({ websocketImplementation: WebSocket })
   let endpoint = null
   try {
     const ev = await Promise.race([

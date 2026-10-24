@@ -9,5 +9,8 @@
     "start": "node luke-service.mjs",
     "test": "for f in *.test.mjs; do echo \"── $f\"; node \"$f\" || exit 1; done"
   },
-  "dependencies": { "nostr-tools": "^2.0.0" }
+  "dependencies": {
+    "nostr-tools": "^2.0.0",
+    "ws": "^8.22.0"
+  }
 }

@@ -45,6 +45,14 @@ await t('no advert found returns fallback', async () => {
   assert.equal(await resolveNactEndpoint({ identity: NACTOR_HEX, pool: fakePool(null), fallback: 'FB' }), 'FB')
 })
 
+await t('failed relay connection returns fallback without a WebSocket error loop', async () => {
+  _resetCache()
+  const got = await resolveNactEndpoint({
+    identity: NACTOR_HEX, relays: ['ws://127.0.0.1:1'], timeoutMs: 1000, fallback: 'FB',
+  })
+  assert.equal(got, 'FB')
+})
+
 await t('nip05 identity resolves via fetch then advert', async () => {
   _resetCache()
   const fetchImpl = async (url) => ({ json: async () => ({ names: { nactor: NACTOR_HEX } }) })
