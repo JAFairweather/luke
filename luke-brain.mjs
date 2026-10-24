@@ -27,6 +27,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
+import WebSocket from 'ws'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
 import { ensureLinks, ensureHashtags, ensureDisclosure, extractHashtags, hasApexLink, mentionedApps, htmlToText } from './post-format.mjs'
 import { VOICES, voiceHeader, engagementTarget, splitBudget, interleave, normText, reconcile } from './voices.mjs'
@@ -206,7 +207,7 @@ async function signalEngagement(pks) {
   // landed on — that's what lets each identity's drafting pass see only the
   // conversations it is actually part of.
   const whoIs = Object.fromEntries(Object.entries(pks).map(([name, pk]) => [pk, name]))
-  const pool = new SimplePool()
+  const pool = new SimplePool({ websocketImplementation: WebSocket })
   try {
     const events = await pool.querySync(RELAYS,
       { kinds: [1, 6, 7, 9735], '#p': authors, since: sinceSec }, { maxWait: 5000 })
@@ -428,7 +429,7 @@ async function saveLedger(entries) {
 async function fetchOwnPublished(pks) {
   const authors = Object.values(pks); if (!authors.length || !BRAIN_LEDGER) return []
   const since = Math.floor(Date.now() / 1000) - LEDGER_LOOKBACK_DAYS * 86400
-  const pool = new SimplePool()
+  const pool = new SimplePool({ websocketImplementation: WebSocket })
   try {
     const events = await pool.querySync(RELAYS, { kinds: [1], authors, since }, { maxWait: 4000 })
     return events.map(e => normText(e.content))
