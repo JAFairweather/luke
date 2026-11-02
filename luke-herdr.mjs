@@ -49,6 +49,26 @@ export function moshiAlert({ from, to, word, workedMs, minMs = 10000, name = 'Lu
   return { title: `${name} finished`, message: `worked for ${duration(workedMs)}`, error: false }
 }
 
+// Turns as a TUI session sees them, for Moshi alerts. A turn counts only if it began after this session
+// showed idle: a dropped link leaves the old busy line on screen, and a turn known only from that stale
+// line must not "finish" when the reconnected TUI first shows idle. reset() when the link drops or a new
+// session starts.
+export function turnTracker({ minMs = 10000, name = 'Luke', now = Date.now } = {}) {
+  let last = null, since = 0, settled = false, counts = false
+  return {
+    observe(state, word) {
+      if (state === last) return null
+      const from = last
+      last = state
+      if (state === 'working') { since = now(); counts = settled }
+      const note = counts ? moshiAlert({ from, to: state, word, workedMs: now() - since, minMs, name }) : null
+      if (state === 'idle') settled = true
+      return note
+    },
+    reset() { last = null; since = 0; settled = false; counts = false },
+  }
+}
+
 // After the TUI's ssh exits: null to stop (a clean quit, or Ctrl-C), else ms to wait before reconnecting —
 // 2s doubling to a minute, back to 2s once a session has lasted a minute.
 export function reconnectDelay(code, ranMs, prev = 0) {
@@ -78,15 +98,15 @@ async function main() {
     ['notify', '--source', name.toLowerCase().replace(/[^a-z0-9._-]/g, '-'), '--label', name, '--title', title, ...(error ? ['--error'] : []), message],
     { timeout: 15000 }, () => {})
 
-  let last = null, named = false, workingSince = 0
+  const turns = turnTracker({ minMs, name })
+  let last = null, named = false
   const tick = async () => {
     let screen = ''
     try { screen = execFileSync('herdr', ['pane', 'read', pane, '--source', 'detection', '--lines', '8'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch {}
     const { state, word } = activityFromScreen(screen)
-    if (state === last) return
-    if (state === 'working') workingSince = Date.now()
-    const note = moshi && moshiAlert({ from: last, to: state, word, workedMs: Date.now() - workingSince, minMs, name })
+    const note = moshi && turns.observe(state, word)
     if (note) alert(note)
+    if (state === last) return
     last = state
     await herdrCall(sock, 'pane.report_agent', { ...id, state, seq: Date.now() })
     if (!named) { try { execFileSync('herdr', ['agent', 'rename', pane, name], { stdio: 'ignore' }); named = true } catch {} }
@@ -96,9 +116,11 @@ async function main() {
   let wait = 0
   const run = () => {
     const began = Date.now()
+    turns.reset()
     const tui = spawn('ssh', ['-t', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3', host,
       'docker exec -it -u 1000 deploy-openclaw-1 openclaw tui'], { stdio: 'inherit' })
     tui.on('exit', async code => {
+      turns.reset()
       wait = reconnectDelay(code, Date.now() - began, wait)
       if (wait !== null) {
         console.error(`\nluke-herdr: the link to ${host} dropped (exit ${code}); reconnecting in ${wait / 1000}s — Ctrl-C to stop`)

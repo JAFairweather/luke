@@ -1,7 +1,7 @@
 // herdr state test — the TUI's status line, as rendered by OpenClaw 2026.10.6
 // (tui setConnectionStatus / updateBusyStatusMessage), maps to herdr states.
 import assert from 'node:assert'
-import { stateFromScreen, activityFromScreen, moshiAlert, reconnectDelay } from './luke-herdr.mjs'
+import { stateFromScreen, activityFromScreen, moshiAlert, turnTracker, reconnectDelay } from './luke-herdr.mjs'
 
 const screen = s => `are we calling it here?\n ${s}\n agent main (Luke) | session main | gemini-3.1-pro-preview medium | tokens 20k/200k\n`
 
@@ -51,3 +51,31 @@ assert.equal(moshiAlert({ from: 'idle', to: 'working', word: '', workedMs: 0 }),
 assert.equal(moshiAlert({ from: 'working', to: 'unknown', word: '', workedMs: 60000 }), null, 'a dropped link is not a finish')
 console.log('✓ a turn that ends alerts Moshi: finished after 10s or more, errors always, aborts never')
 
+// Across a session's life: only a turn that began after this session showed idle can alert.
+let clock = 0
+const tracked = () => turnTracker({ name: 'lukedog', now: () => clock })
+const see = (tr, text) => { const { state, word } = activityFromScreen(text); return tr.observe(state, word) }
+const STALE = busy('⠋ streaming • 20s | connected'), IDLE_LINE = screen('connected | idle')
+{
+  const tr = tracked()
+  clock = 0; assert.equal(see(tr, IDLE_LINE), null)
+  clock = 1000; assert.equal(see(tr, STALE), null)
+  clock = 61000; assert.deepEqual(see(tr, IDLE_LINE), { title: 'lukedog finished', message: 'worked for 1m 0s', error: false }, 'a real turn alerts')
+}
+{
+  // The link drops mid-turn; during backoff and after reconnecting the old busy line is still on screen.
+  const tr = tracked()
+  clock = 0; see(tr, IDLE_LINE); clock = 1000; see(tr, STALE)
+  tr.reset()
+  clock = 30000; assert.equal(see(tr, STALE), null, 'stale busy line after the drop')
+  clock = 45000; assert.equal(see(tr, IDLE_LINE), null, 'the reconnected TUI showing idle is not a finished turn')
+  clock = 50000; see(tr, STALE)
+  clock = 80000; assert.deepEqual(see(tr, IDLE_LINE), { title: 'lukedog finished', message: 'worked for 30s', error: false }, 'the next real turn alerts again')
+}
+{
+  // Started mid-turn (luke-herdr launched while Luke works): that turn is not counted.
+  const tr = tracked()
+  clock = 0; assert.equal(see(tr, STALE), null)
+  clock = 60000; assert.equal(see(tr, IDLE_LINE), null)
+}
+console.log('✓ a dropped link or a fresh start never reports a finished turn it did not see begin')
