@@ -1,7 +1,7 @@
 // herdr state test — the TUI's status line, as rendered by OpenClaw 2026.10.6
 // (tui setConnectionStatus / updateBusyStatusMessage), maps to herdr states.
 import assert from 'node:assert'
-import { stateFromScreen, reconnectDelay } from './luke-herdr.mjs'
+import { stateFromScreen, activityFromScreen, moshiAlert, reconnectDelay } from './luke-herdr.mjs'
 
 const screen = s => `are we calling it here?\n ${s}\n agent main (Luke) | session main | gemini-3.1-pro-preview medium | tokens 20k/200k\n`
 
@@ -35,3 +35,19 @@ assert.equal(reconnectDelay(255, 5000, 60000), 60000, 'capped at a minute')
 assert.equal(reconnectDelay(255, 3600000, 32000), 2000, 'a long session resets the backoff')
 
 console.log('✓ the TUI status line maps to herdr idle/working, and anything unclear is unknown')
+
+// The activity word rides along, so a turn's end can be told apart.
+assert.deepEqual(activityFromScreen(screen('connected | error')), { state: 'idle', word: 'error' })
+assert.deepEqual(activityFromScreen(busy('⠋ streaming • 4s | connected')), { state: 'working', word: '' })
+
+// Moshi alerts only at the end of a turn: an error always, a finished turn once it ran 10s, an abort never.
+const end = (word, workedMs) => moshiAlert({ from: 'working', to: 'idle', word, workedMs, name: 'lukedog' })
+assert.deepEqual(end('idle', 75000), { title: 'lukedog finished', message: 'worked for 1m 15s', error: false })
+assert.equal(end('idle', 4000), null, 'a short turn is not worth a push')
+assert.deepEqual(end('error', 3000), { title: 'lukedog hit an error', message: 'after 3s (error)', error: true })
+assert.equal(end('aborted', 60000), null, 'the owner stopped it; no alert')
+assert.equal(moshiAlert({ from: null, to: 'idle', word: 'idle', workedMs: 0 }), null, 'first sight is not an ending')
+assert.equal(moshiAlert({ from: 'idle', to: 'working', word: '', workedMs: 0 }), null)
+assert.equal(moshiAlert({ from: 'working', to: 'unknown', word: '', workedMs: 60000 }), null, 'a dropped link is not a finish')
+console.log('✓ a turn that ends alerts Moshi: finished after 10s or more, errors always, aborts never')
+
