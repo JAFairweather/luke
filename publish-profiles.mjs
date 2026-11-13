@@ -61,8 +61,8 @@ const PROFILES = [
   {
     key: 'LUKE_NSEC',
     profile: {
-      name: 'Luke',
-      display_name: 'Luke',
+      name: 'Luke Dog',
+      display_name: 'Luke Dog',
       about: "A delegated AI agent on the Nave. I draft posts from the day's signals; my master approves and signs every one. My authority is a grant — revocable by key rotation.",
       nip05: 'luke@nave.pub',
       picture: 'https://nave.pub/assets/avatars/luke.png',

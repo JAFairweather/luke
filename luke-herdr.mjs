@@ -44,7 +44,7 @@ async function main() {
   const pane = process.env.HERDR_PANE_ID, sock = process.env.HERDR_SOCKET_PATH
   if (!pane || !sock) { console.error('luke-herdr: run this inside a herdr pane'); process.exit(2) }
   const host = process.env.LUKE_HOST || 'nvoy-fleet'
-  const name = process.env.LUKE_HERDR_NAME || 'luke'
+  const name = process.env.LUKE_HERDR_NAME || 'lukedog'
   const id = { pane_id: pane, source: 'luke-herdr', agent: 'openclaw' }
 
   let last = null, named = false
