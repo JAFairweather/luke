@@ -20,6 +20,7 @@ import { SimplePool } from 'nostr-tools/pool'
 import { randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { composeContent, buildTags } from './post-format.mjs'
+import { WEBHOOK_RETRY_DELAYS_MS } from './webhook-retry.mjs'
 
 // --- config -------------------------------------------------------------
 const RELAYS = (process.env.LUKE_RELAYS ?? 'wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net')
@@ -178,12 +179,13 @@ export async function registerWebhook() {
   if (!(BOT || NACT_BROKER_URL) || !APPROVER) { console.log('  webhook: skipped (telegram not configured)'); return false }
   const body = { url: WEBHOOK_URL, allowed_updates: ['callback_query'] }
   if (WEBHOOK_SECRET) body.secret_token = WEBHOOK_SECRET
-  // Retry with backoff: on a co-deploy the broker (nactor) may not be reachable
-  // the instant we boot, so a single attempt can lose the registration to a race.
-  for (let i = 1; i <= 6; i++) {
+  // Retry with backoff: on a co-deploy the broker (nactor) is not ready the instant
+  // we boot, and it has no credentials until its grant sweep ends (webhook-retry.mjs).
+  for (let i = 0; ; i++) {
     const ok = await tg('setWebhook', body)
     if (ok) { console.log(`  webhook: registered → ${WEBHOOK_URL}${WEBHOOK_SECRET ? ' (secret set)' : ''}`); return true }
-    if (i < 6) await new Promise(r => setTimeout(r, i * 2000))
+    if (i >= WEBHOOK_RETRY_DELAYS_MS.length) break
+    await new Promise(r => setTimeout(r, WEBHOOK_RETRY_DELAYS_MS[i]))
   }
   console.log('  webhook: FAILED after retries — approval taps will not arrive')
   return false
