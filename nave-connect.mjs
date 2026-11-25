@@ -63,7 +63,7 @@ export function localSigner(sk) {
 // the signer is cheap. _BunkerSigner/_parseBunkerInput are injectable for tests.
 export function nip46Signer(bunkerInput, {
   clientSecret, onAuthUrl,
-  _BunkerSigner = BunkerSigner, _parseBunkerInput = parseBunkerInput,
+  _pool, _BunkerSigner = BunkerSigner, _parseBunkerInput = parseBunkerInput,
 } = {}) {
   const local = clientSecret ? fromHex(clientSecret) : generateSecretKey()
   let signer = null, pk = null
@@ -71,7 +71,10 @@ export function nip46Signer(bunkerInput, {
     if (signer) return signer
     const pointer = await _parseBunkerInput(bunkerInput)
     if (!pointer) throw new Error('nip46Signer: not a valid bunker:// / nostrconnect:// URI')
-    signer = new _BunkerSigner(local, pointer, { onauth: onAuthUrl })
+    // fromBunker, never `new`: nostr-tools' constructor is (secretKey, params) and takes no pointer. Built
+    // with `new BunkerSigner(local, pointer, …)` the signer has no bunker pointer, and connect() dies with
+    // "undefined is not an object (evaluating 'this.bp.pubkey')": every bunker:// sign-in failed that way.
+    signer = _BunkerSigner.fromBunker(local, pointer, { onauth: onAuthUrl, ...(_pool ? { pool: _pool } : {}) })
     await signer.connect()
     pk = await signer.getPublicKey()
     return signer

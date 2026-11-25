@@ -61,8 +61,10 @@ await t('nip07Signer: throws with no extension', () => {
 await t('nip46Signer: lazy connect, shape, persists client key', async () => {
   let connected = 0
   const fakePointer = { pubkey: 'cd'.repeat(32), relays: ['wss://r'] }
+  let built = null
   const FakeBunker = class {
-    constructor(local) { this.local = local }
+    constructor() { throw new Error('the constructor takes no pointer: build with fromBunker') }
+    static fromBunker(local, pointer, params) { const o = Object.create(FakeBunker.prototype); built = { local, pointer, params }; return o }
     async connect() { connected++ }
     async getPublicKey() { return 'ef'.repeat(32) }
     async signEvent(e) { return { ...e, pubkey: 'ef'.repeat(32), sig: 'sig' } }
@@ -75,6 +77,8 @@ await t('nip46Signer: lazy connect, shape, persists client key', async () => {
   assert.equal(connected, 0, 'connect is lazy — not called on construct')
   assert.equal(await s.getPublicKey(), 'ef'.repeat(32))
   assert.equal(connected, 1, 'connected on first use')
+  assert.equal(built.pointer, fakePointer, 'the parsed pointer reaches the signer')
+  assert.equal(typeof built.params, 'object')
   await s.signEvent({ kind: 1, created_at: 0, tags: [], content: 'x' })
   assert.equal(connected, 1, 'reuses the connection')
 })
@@ -82,10 +86,34 @@ await t('nip46Signer: lazy connect, shape, persists client key', async () => {
 await t('nip46Signer: reuses a persisted client key', async () => {
   const cs = 'a'.repeat(64)
   const s = nip46Signer('bunker://x', {
-    clientSecret: cs, _BunkerSigner: class { async connect() {} async getPublicKey() { return '00'.repeat(32) } },
+    clientSecret: cs, _BunkerSigner: { fromBunker: () => ({ async connect() {}, async getPublicKey() { return '00'.repeat(32) } }) },
     _parseBunkerInput: async () => ({ pubkey: 'x', relays: [] }),
   })
   assert.equal(s.clientSecretHex, cs, 'restored key, not a fresh one')
+})
+
+// The REAL nostr-tools BunkerSigner, with only the relay pool faked. The fakes above cannot catch a signer
+// built the wrong way; this does: before the fix the first use threw a TypeError on `this.bp.pubkey` and
+// nothing was ever sent to the bunker.
+await t('nip46Signer: with the real BunkerSigner, the connect request goes to the bunker in the pointer', async () => {
+  const bunkerPk = getPublicKey(generateSecretKey())
+  const pointer = { pubkey: bunkerPk, relays: ['wss://r1', 'wss://r2'], secret: null }
+  const published = [], subscribed = []
+  const pool = {
+    subscribe: (relays, filter) => { subscribed.push({ relays, filter }); return { close() {} } },
+    publish: (relays, ev) => { published.push({ relays, ev }); return [Promise.resolve('ok')] },
+  }
+  const s = nip46Signer('bunker://whatever', { _pool: pool, _parseBunkerInput: async () => pointer })
+  let failed = null
+  s.getPublicKey().catch(e => { failed = e })          // never resolves here: no bunker answers
+  await new Promise(r => setTimeout(r, 100))
+  assert.equal(failed, null, `first use must not throw (got: ${failed?.message})`)
+  assert.equal(published.length, 1, 'one request sent')
+  assert.deepEqual(published[0].relays, pointer.relays, 'to the bunker\'s relays')
+  assert.equal(published[0].ev.kind, 24133)
+  assert.deepEqual(published[0].ev.tags.find(t => t[0] === 'p'), ['p', bunkerPk], 'addressed to the bunker')
+  assert.ok(verifyEvent(published[0].ev), 'signed by the client key')
+  assert.equal(subscribed.length, 1, 'listening for the reply')
 })
 
 await t('nip46Signer: rejects junk bunker input', async () => {
