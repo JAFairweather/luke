@@ -124,20 +124,48 @@ await t('nip46Signer: a first pairing fails when the bunker refuses connect', as
   await assert.rejects(() => s.getPublicKey(), /invalid secret/)
 })
 
+// Apps reuse one stored client key when the user pastes a NEW bunker URI, so a clientSecret alone is not a
+// restore: that connect must still wait for the user's approval and report the bunker's own error.
+await t('nip46Signer: a stored client key alone keeps the strict path (waits for approval, reports a refusal)', async () => {
+  let approve, askedPk = false
+  const mk = connect => nip46Signer('bunker://new', {
+    clientSecret: 'a'.repeat(64), _restoreConnectMs: 20,
+    _BunkerSigner: { fromBunker: () => ({ connect, async getPublicKey() { askedPk = true; return 'ef'.repeat(32) } }) },
+    _parseBunkerInput: async () => ({ pubkey: 'cd'.repeat(32), relays: ['wss://r'] }),
+  })
+  const waiting = mk(() => new Promise(r => { approve = r })).getPublicKey()
+  await new Promise(r => setTimeout(r, 80))
+  assert.equal(askedPk, false, 'no request goes out before the user approves, however long that takes')
+  approve(); assert.equal(await waiting, 'ef'.repeat(32))
+  await assert.rejects(() => mk(async () => { throw new Error('invalid secret') }).getPublicKey(), /invalid secret/)
+})
+
 await t('nip46Signer: a restored pairing survives a refused or ignored connect (the secret is spent)', async () => {
   const mk = connect => nip46Signer('bunker://x', {
-    clientSecret: 'a'.repeat(64), _restoreConnectMs: 30,
+    restore: true, clientSecret: 'a'.repeat(64), _restoreConnectMs: 30,
     _BunkerSigner: { fromBunker: () => ({ connect, async getPublicKey() { return 'ef'.repeat(32) } }) },
     _parseBunkerInput: async () => ({ pubkey: 'cd'.repeat(32), relays: ['wss://r'] }),
   })
   assert.equal(await mk(async () => { throw new Error('secret already used') }).getPublicKey(), 'ef'.repeat(32), 'refused')
   assert.equal(await mk(() => new Promise(() => {})).getPublicKey(), 'ef'.repeat(32), 'ignored: capped, not hung')
   const dead = nip46Signer('bunker://x', {
-    clientSecret: 'a'.repeat(64), _restoreConnectMs: 30,
+    restore: true, clientSecret: 'a'.repeat(64), _restoreConnectMs: 30,
     _BunkerSigner: { fromBunker: () => ({ async connect() {}, async getPublicKey() { throw new Error('unauthorized') } }) },
     _parseBunkerInput: async () => ({ pubkey: 'cd'.repeat(32), relays: ['wss://r'] }),
   })
   await assert.rejects(() => dead.getPublicKey(), /unauthorized/, 'a pairing the bunker dropped still fails')
+})
+
+await t('signerFromSession: a saved nip46 session is the one caller that restores', async () => {
+  let got = null
+  const sess = parseSession(serializeSession('nip46', { uri: 'bunker://x', clientSecretHex: 'a'.repeat(64) }))
+  const s = signerFromSession(sess, {
+    restore: false, _restoreConnectMs: 20,
+    _BunkerSigner: { fromBunker: () => ({ async connect() { throw new Error('secret already used') }, async getPublicKey() { got = 'asked'; return 'ef'.repeat(32) } }) },
+    _parseBunkerInput: async () => ({ pubkey: 'cd'.repeat(32), relays: ['wss://r'] }),
+  })
+  assert.equal(await s.getPublicKey(), 'ef'.repeat(32), 'a refused connect does not end a saved session')
+  assert.equal(got, 'asked')
 })
 
 await t('nip46Signer: rejects junk bunker input', async () => {
