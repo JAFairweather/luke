@@ -29,6 +29,7 @@ import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import WebSocket from 'ws'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
+import { draftProvider, draftModel, draftRequest, draftReplyText, draftUsageLine } from './draft-provider.mjs'
 import { ensureLinks, ensureHashtags, ensureDisclosure, extractHashtags, hasApexLink, mentionedApps, htmlToText } from './post-format.mjs'
 import { VOICES, voiceHeader, engagementTarget, splitBudget, interleave, normText, reconcile } from './voices.mjs'
 
@@ -52,7 +53,9 @@ const BRAIN_NSEC = process.env.BRAIN_NSEC?.trim()
 // Default to the strongest model — depth is the goal, and drafting runs only
 // twice a day so the cost is negligible. DRAFT_MODEL still overrides (cheaper
 // runs, A/B). This is a config constant, not a claim in any post.
-const DRAFT_MODEL = process.env.DRAFT_MODEL?.trim() || 'claude-opus-4-8'
+// DRAFT_PROVIDER=openai drafts on OpenAI instead, through the same broker (draft-provider.mjs).
+const DRAFT_PROVIDER = draftProvider(process.env)
+const DRAFT_MODEL = draftModel(DRAFT_PROVIDER, process.env)
 const PROPOSE_URL = process.env.PROPOSE_URL?.trim() || 'https://luke.nave.pub/propose'
 const PROPOSE_TOKEN = process.env.PROPOSE_TOKEN?.trim()
 const GH_OWNER = process.env.GITHUB_OWNER?.trim() || 'JAFairweather'
@@ -253,8 +256,9 @@ function brokerAuth(method, url, bodyStr) {
   const ev = finalizeEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), tags, content: '' }, brainSk())
   return 'Nostr ' + Buffer.from(JSON.stringify(ev)).toString('base64')
 }
-// Returns the parsed Anthropic /v1/messages response, either brokered through
-// Nactor (key stays in Nactor) or called directly (pre-migration fallback).
+// Returns the provider's parsed response to a draft-provider.mjs request, either brokered
+// through Nactor (key stays in Nactor) or, for anthropic only, called directly (pre-migration
+// fallback). openai has no direct path: its key exists only in the broker.
 let _nactBase   // resolved once per run
 async function nactBase() {
   if (_nactBase !== undefined) return _nactBase
@@ -263,15 +267,16 @@ async function nactBase() {
     await resolveNactEndpoint({ identity: NACT_IDENTITY, relays: RELAYS, fallback: null })
   return _nactBase
 }
-async function callAnthropic(payload) {
+async function callModel({ provider, path, payload }) {
   const base = (NACT_BROKER_URL || NACT_IDENTITY) && BRAIN_NSEC ? await nactBase() : null
   if (base && BRAIN_NSEC) {
     const u = base.replace(/\/$/, '') + '/broker'
-    const body = JSON.stringify({ provider: 'anthropic', path: '/v1/messages', method: 'POST', body: payload })
+    const body = JSON.stringify({ provider, path, method: 'POST', body: payload })
     const r = await fetch(u, { method: 'POST', headers: { authorization: brokerAuth('POST', u, body), 'content-type': 'application/json' }, body })
-    if (!r.ok) throw new Error(`broker anthropic ${r.status}: ${await r.text().catch(() => '')}`)
+    if (!r.ok) throw new Error(`broker ${provider} ${r.status}: ${await r.text().catch(() => '')}`)
     return await r.json()
   }
+  if (provider !== 'anthropic') throw new Error(`no LLM path configured for ${provider}: it is reached only through the broker (set NACT_BROKER_URL or NACT_IDENTITY, and BRAIN_NSEC)`)
   if (!ANTHROPIC_API_KEY) throw new Error('no LLM path configured: set NACT_BROKER_URL (or NACT_IDENTITY) + BRAIN_NSEC, or ANTHROPIC_API_KEY')
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -373,8 +378,9 @@ Each element:\n\
       (history.passed.length ? `Recently PASSED (proposed, not approved — do NOT re-propose these or close variants):\n${history.passed.map(t => `- "${t}"`).join('\n')}` : '')
     ) : '')
 
-  const j = await callAnthropic({ model: DRAFT_MODEL, max_tokens: 4000, system, messages: [{ role: 'user', content: user }] })
-  const text = (j.content || []).map(c => c.text || '').join('').trim()
+  const j = await callModel(draftRequest(DRAFT_PROVIDER, DRAFT_MODEL, system, user))
+  log('  ' + draftUsageLine(DRAFT_PROVIDER, DRAFT_MODEL, j))
+  const text = draftReplyText(DRAFT_PROVIDER, j)
   // Tolerate markdown fences and any prose around the array: take the outermost
   // [...] span. (Also raised max_tokens above so the array can't truncate.)
   const s = text.indexOf('['), e = text.lastIndexOf(']')
