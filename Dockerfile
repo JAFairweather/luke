@@ -17,6 +17,7 @@ COPY luke-reveal.mjs ./
 COPY luke-brain.mjs ./
 COPY draft-provider.mjs ./
 COPY nact-resolve.mjs ./
+COPY relay-socket.mjs ./
 COPY nave-connect.mjs ./
 COPY gate-vendor ./gate-vendor
 COPY luke-calendar.mjs ./

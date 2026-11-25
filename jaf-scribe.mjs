@@ -38,6 +38,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { finalizeEvent, getPublicKey, nip19, nip44 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
+import { RelaySocket } from './relay-socket.mjs'
 import { resolveNactEndpoint } from './nact-resolve.mjs'
 import { newScopeKey, publishScope, grant, receiveGrants, latestGrants, fetchScope, localSigner } from './nipxx.mjs'
 import { extractHashtags, ensureAppLinks, ensureLinks, ensureDisclosure, DISCLOSURE, mentionedApps, htmlToText } from './post-format.mjs'
@@ -110,7 +111,7 @@ function makeQuillSigner() {
     const clientKey = loadSk(process.env.SCRIBE_CLIENT_NSEC?.trim()) ?? newScopeKey()
     const clientPk = getPublicKey(clientKey)
     const convKey = nip44.v2.utils.getConversationKey(clientKey, remotePk)
-    const pool = new SimplePool()
+    const pool = new SimplePool({ websocketImplementation: RelaySocket })
     const pending = new Map()
     let subbed = false, connectedP = null
     const ensureSub = () => {
@@ -216,7 +217,7 @@ async function signalSubstack() {
 // the voice sample and the don't-repeat set.
 async function signalNostr() {
   if (!MASTER_PK) return { toMe: [], mine: [] }
-  const pool = new SimplePool()
+  const pool = new SimplePool({ websocketImplementation: RelaySocket })
   const short = pk => { try { return nip19.npubEncode(pk).slice(0, 13) + '…' } catch { return pk.slice(0, 8) + '…' } }
   try {
     const [inbound, mine] = await Promise.all([
@@ -274,7 +275,7 @@ async function callAnthropic(payload) {
 // --- relay adapter ------------------------------------------------------
 // All nipxx needs: publish() fanning out to the pool, query() gathering back.
 // Shared by the issuance path (below) and the steering read (next).
-const pool = new SimplePool()
+const pool = new SimplePool({ websocketImplementation: RelaySocket })
 const relay = {
   publish: async (event) => {
     const rs = await Promise.allSettled(pool.publish(RELAYS, event))

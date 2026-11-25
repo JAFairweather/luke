@@ -30,6 +30,7 @@
 
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
+import { RelaySocket } from './relay-socket.mjs'
 
 const DRY = process.argv.includes('--dry-run')
 
@@ -114,7 +115,7 @@ const PROFILES = [
   },
 ]
 
-const pool = new SimplePool()
+const pool = new SimplePool({ websocketImplementation: RelaySocket })
 let published = 0
 
 for (const { key, profile } of PROFILES) {
