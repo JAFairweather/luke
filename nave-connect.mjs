@@ -63,7 +63,7 @@ export function localSigner(sk) {
 // the signer is cheap. _BunkerSigner/_parseBunkerInput are injectable for tests.
 export function nip46Signer(bunkerInput, {
   clientSecret, onAuthUrl,
-  _pool, _BunkerSigner = BunkerSigner, _parseBunkerInput = parseBunkerInput,
+  _pool, _BunkerSigner = BunkerSigner, _parseBunkerInput = parseBunkerInput, _restoreConnectMs = 15000,
 } = {}) {
   const local = clientSecret ? fromHex(clientSecret) : generateSecretKey()
   let signer = null, pk = null
@@ -75,7 +75,20 @@ export function nip46Signer(bunkerInput, {
     // with `new BunkerSigner(local, pointer, …)` the signer has no bunker pointer, and connect() dies with
     // "undefined is not an object (evaluating 'this.bp.pubkey')": every bunker:// sign-in failed that way.
     signer = _BunkerSigner.fromBunker(local, pointer, { onauth: onAuthUrl, ...(_pool ? { pool: _pool } : {}) })
-    await signer.connect()
+    if (clientSecret) {
+      // A restored pairing (page reload): the bunker already knows this client key, and the secret in the
+      // URI is spent. NIP-46 lets a signer refuse or ignore a second connect, so here it is best-effort and
+      // capped; getPublicKey below is what proves the pairing still stands. A first pairing (no stored key)
+      // keeps the strict path: its connect may wait on the user's approval and its error is the real one.
+      let timer
+      await Promise.race([
+        Promise.resolve().then(() => signer.connect()).catch(() => {}),
+        new Promise(r => { timer = setTimeout(r, _restoreConnectMs) }),
+      ])
+      clearTimeout(timer)
+    } else {
+      await signer.connect()
+    }
     pk = await signer.getPublicKey()
     return signer
   }

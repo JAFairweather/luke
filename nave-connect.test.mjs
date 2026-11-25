@@ -116,6 +116,30 @@ await t('nip46Signer: with the real BunkerSigner, the connect request goes to th
   assert.equal(subscribed.length, 1, 'listening for the reply')
 })
 
+await t('nip46Signer: a first pairing fails when the bunker refuses connect', async () => {
+  const s = nip46Signer('bunker://x', {
+    _BunkerSigner: { fromBunker: () => ({ async connect() { throw new Error('invalid secret') }, async getPublicKey() { return 'ef'.repeat(32) } }) },
+    _parseBunkerInput: async () => ({ pubkey: 'cd'.repeat(32), relays: ['wss://r'] }),
+  })
+  await assert.rejects(() => s.getPublicKey(), /invalid secret/)
+})
+
+await t('nip46Signer: a restored pairing survives a refused or ignored connect (the secret is spent)', async () => {
+  const mk = connect => nip46Signer('bunker://x', {
+    clientSecret: 'a'.repeat(64), _restoreConnectMs: 30,
+    _BunkerSigner: { fromBunker: () => ({ connect, async getPublicKey() { return 'ef'.repeat(32) } }) },
+    _parseBunkerInput: async () => ({ pubkey: 'cd'.repeat(32), relays: ['wss://r'] }),
+  })
+  assert.equal(await mk(async () => { throw new Error('secret already used') }).getPublicKey(), 'ef'.repeat(32), 'refused')
+  assert.equal(await mk(() => new Promise(() => {})).getPublicKey(), 'ef'.repeat(32), 'ignored: capped, not hung')
+  const dead = nip46Signer('bunker://x', {
+    clientSecret: 'a'.repeat(64), _restoreConnectMs: 30,
+    _BunkerSigner: { fromBunker: () => ({ async connect() {}, async getPublicKey() { throw new Error('unauthorized') } }) },
+    _parseBunkerInput: async () => ({ pubkey: 'cd'.repeat(32), relays: ['wss://r'] }),
+  })
+  await assert.rejects(() => dead.getPublicKey(), /unauthorized/, 'a pairing the bunker dropped still fails')
+})
+
 await t('nip46Signer: rejects junk bunker input', async () => {
   const s = nip46Signer('not-a-bunker', { _parseBunkerInput: async () => null })
   await assert.rejects(() => s.getPublicKey(), /not a valid bunker/)
