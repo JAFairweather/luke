@@ -17,6 +17,7 @@
 
 import { finalizeEvent, getPublicKey, verifyEvent, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
+import { RelaySocket } from './relay-socket.mjs'
 import { randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { composeContent, buildTags } from './post-format.mjs'
@@ -255,7 +256,7 @@ export async function handleTelegramWebhook(req, res, raw) {
   }
 }
 
-const pool = new SimplePool()
+const pool = new SimplePool({ websocketImplementation: RelaySocket })
 // For a reply, fetch the note being answered so the event can thread properly
 // (NIP-10 root/reply markers) and p-tag its author — the p tag is what makes
 // the reply NOTIFY the person; without it we were whispering into the void.
