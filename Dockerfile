@@ -15,6 +15,7 @@ COPY luke-console.mjs ./
 COPY luke-skin.mjs ./
 COPY luke-reveal.mjs ./
 COPY luke-brain.mjs ./
+COPY draft-provider.mjs ./
 COPY nact-resolve.mjs ./
 COPY nave-connect.mjs ./
 COPY gate-vendor ./gate-vendor
