@@ -62,8 +62,8 @@ export function localSigner(sk) {
 // session instead of prompting again. Connect is lazy (first use), so building
 // the signer is cheap. _BunkerSigner/_parseBunkerInput are injectable for tests.
 export function nip46Signer(bunkerInput, {
-  clientSecret, onAuthUrl,
-  _BunkerSigner = BunkerSigner, _parseBunkerInput = parseBunkerInput,
+  clientSecret, onAuthUrl, restore = false,
+  _pool, _BunkerSigner = BunkerSigner, _parseBunkerInput = parseBunkerInput, _restoreConnectMs = 15000,
 } = {}) {
   const local = clientSecret ? fromHex(clientSecret) : generateSecretKey()
   let signer = null, pk = null
@@ -71,8 +71,25 @@ export function nip46Signer(bunkerInput, {
     if (signer) return signer
     const pointer = await _parseBunkerInput(bunkerInput)
     if (!pointer) throw new Error('nip46Signer: not a valid bunker:// / nostrconnect:// URI')
-    signer = new _BunkerSigner(local, pointer, { onauth: onAuthUrl })
-    await signer.connect()
+    // fromBunker, never `new`: nostr-tools' constructor is (secretKey, params) and takes no pointer. Built
+    // with `new BunkerSigner(local, pointer, …)` the signer has no bunker pointer, and connect() dies with
+    // "undefined is not an object (evaluating 'this.bp.pubkey')": every bunker:// sign-in failed that way.
+    signer = _BunkerSigner.fromBunker(local, pointer, { onauth: onAuthUrl, ...(_pool ? { pool: _pool } : {}) })
+    if (restore) {
+      // A restored pairing (signerFromSession, on page reload): the bunker already knows this client key and
+      // the secret in the URI is spent. NIP-46 lets a signer refuse or ignore a second connect, so here it is
+      // best-effort and capped; getPublicKey below is what proves the pairing still stands. Every other call
+      // keeps the strict path, a stored clientSecret included (apps reuse one client key when the user pastes
+      // a NEW bunker URI): that connect may wait on the user's approval, and its error is the real one.
+      let timer
+      await Promise.race([
+        Promise.resolve().then(() => signer.connect()).catch(() => {}),
+        new Promise(r => { timer = setTimeout(r, _restoreConnectMs) }),
+      ])
+      clearTimeout(timer)
+    } else {
+      await signer.connect()
+    }
     pk = await signer.getPublicKey()
     return signer
   }
@@ -225,6 +242,6 @@ export function parseSession(saved) {
 export function signerFromSession(sess, opts = {}) {
   if (!sess) return null
   if (sess.kind === 'nip07') return nip07Signer(opts.win)
-  if (sess.kind === 'nip46') return nip46Signer(sess.uri, { clientSecret: sess.clientSecret, ...opts })
+  if (sess.kind === 'nip46') return nip46Signer(sess.uri, { clientSecret: sess.clientSecret, ...opts, restore: true })
   return null
 }
